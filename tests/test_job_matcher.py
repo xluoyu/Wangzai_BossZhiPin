@@ -15,11 +15,16 @@ import pytest
 from boss_zhipin.models import job_matcher
 from boss_zhipin.models.job_matcher import (
     _find_keywords,
+    _parse_resume_profile,
+    _profile_cache_file,
+    _resume_profile_prompt,
     extract_keywords_from_text,
+    extract_resume_profile,
     keyword_match,
     llm_match_score,
     should_apply,
 )
+from boss_zhipin.models.resume_profile import ResumeProfile
 
 # 临时定义一个 TECH_KEYWORDS 给测试使用
 TECH_KEYWORDS = [
@@ -102,6 +107,118 @@ class TestKeywordMatch:
         )
         assert not passed
         assert matched == []
+
+
+# ---------- ResumeProfile 结构化解析 ----------
+
+class TestResumeProfile:
+    def test_parse_resume_profile_happy_path(self):
+        profile = _parse_resume_profile(
+            """
+{
+  "summary": "五年客户成功经验",
+  "skills": ["客户沟通", "续费管理"],
+  "work_experience": [{"company": "某某科技", "role": "客户成功经理"}],
+  "project_experience": [{"name": "续费提升专项", "tools": ["Excel"]}],
+  "education": [{"school": "浙江大学"}],
+  "achievements": ["续费率提升"],
+  "keywords": ["客户成功", "续费管理"]
+}
+"""
+        )
+
+        assert profile is not None
+        assert profile.summary == "五年客户成功经验"
+        assert profile.work_experience[0].company == "某某科技"
+        assert profile.project_experience[0].tools == ["Excel"]
+
+    def test_parse_resume_profile_missing_fields_use_defaults(self):
+        profile = _parse_resume_profile('{"summary": "候选人概况"}')
+
+        assert profile is not None
+        assert profile.summary == "候选人概况"
+        assert profile.skills == []
+        assert profile.work_experience == []
+        assert profile.keywords == []
+
+    def test_parse_resume_profile_rejects_markdown_wrapped_json(self):
+        assert _parse_resume_profile('```json\n{"summary": "x"}\n```') is None
+
+    def test_parse_resume_profile_rejects_wrong_field_type(self):
+        assert _parse_resume_profile('{"skills": "Python"}') is None
+
+    def test_resume_profile_prompt_uses_full_resume_text(self):
+        long_resume = "开头" + ("很长的正文" * 700) + "尾部唯一标记"
+        prompt = _resume_profile_prompt(long_resume)
+
+        assert "开头" in prompt
+        assert "尾部唯一标记" in prompt
+
+    def test_extract_resume_profile_uses_cache_without_llm(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        resume_text = "简历正文"
+        cache_file = _profile_cache_file(resume_text)
+        assert cache_file.parent == job_matcher._legacy_keywords_cache_file(resume_text).parent
+        cache_file.parent.mkdir(parents=True)
+        cache_file.write_text(
+            '{"summary": "缓存概况", "keywords": ["缓存关键词"]}',
+            encoding="utf-8",
+        )
+
+        def boom(_):
+            raise AssertionError("不应该调用 LLM")
+
+        monkeypatch.setattr(job_matcher, "_llm_extract_resume_profile", boom)
+
+        profile = extract_resume_profile(resume_text)
+        assert profile is not None
+        assert profile.summary == "缓存概况"
+        assert profile.keywords == ["缓存关键词"]
+
+    def test_llm_extract_resume_profile_sends_full_text(self, monkeypatch, fake_client):
+        captured: dict = {}
+
+        def fake_call(client, **kwargs):
+            captured.update(kwargs)
+            return _fake_response(
+                '{"summary": "完整解析", "keywords": ["完整简历"]}'
+            )
+
+        monkeypatch.setattr(job_matcher, "_call_chat_completion", fake_call)
+        long_resume = "开头" + ("正文" * 2000) + "尾部唯一标记"
+
+        profile = job_matcher._llm_extract_resume_profile(long_resume)
+
+        assert profile is not None
+        assert profile.keywords == ["完整简历"]
+        assert captured["max_tokens"] == 4096
+        assert "尾部唯一标记" in captured["messages"][0]["content"]
+
+    def test_extract_keywords_prefers_profile_keywords(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        profile = ResumeProfile(keywords=["Python", "AI 应用", ""])
+
+        assert extract_keywords_from_text("简历正文", profile) == ["Python", "AI 应用"]
+
+    def test_extract_keywords_does_not_retry_llm_when_profile_failed(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+
+        def boom(_):
+            raise AssertionError("显式传入 None 时不应该再次调用 LLM")
+
+        monkeypatch.setattr(job_matcher, "extract_resume_profile", boom)
+
+        assert extract_keywords_from_text("简历正文", None) == []
+
+    def test_extract_keywords_falls_back_to_legacy_cache(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        resume_text = "简历正文"
+        cache_file = job_matcher._legacy_keywords_cache_file(resume_text)
+        cache_file.parent.mkdir(parents=True)
+        cache_file.write_text('["旧关键词"]', encoding="utf-8")
+        monkeypatch.setattr(job_matcher, "extract_resume_profile", lambda _: None)
+
+        assert extract_keywords_from_text(resume_text) == ["旧关键词"]
 
 
 # ---------- llm_match_score ----------

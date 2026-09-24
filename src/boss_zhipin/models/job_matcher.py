@@ -23,9 +23,12 @@ from boss_zhipin.models.llm import (
     _completion_content,
     current_provider_label,
 )
+from boss_zhipin.models.resume_profile import ResumeProfile
 
 load_dotenv()
 log = logging.getLogger(__name__)
+PROFILE_MAX_TOKENS = 4096
+_RESUME_PROFILE_NOT_PROVIDED = object()
 
 # 预定义的职位类型关键词库，用于从简历中识别技能和方向已移除（完全使用动态提取）
 
@@ -58,75 +61,201 @@ def extract_resume_text(pdf_path: str) -> str:
     return "\n".join(page.extract_text() or "" for page in reader.pages)
 
 
-def _llm_extract_keywords(resume_text: str) -> list[str]:
-    """使用 LLM 从简历中提取技术关键词。"""
+def _text_hash(text: str) -> str:
+    return hashlib.md5(text.encode("utf-8")).hexdigest()
+
+
+def _profile_cache_file(resume_text: str) -> Path:
+    return Path("vectorstores") / _text_hash(resume_text) / "resume_profile.json"
+
+
+def _legacy_keywords_cache_file(resume_text: str) -> Path:
+    return Path("vectorstores") / _text_hash(resume_text) / "keywords.json"
+
+
+def _resume_profile_prompt(resume_text: str) -> str:
+    """构造全量简历结构化解析 prompt。
+
+    注意：这里故意不截断 resume_text。用户已经明确选择用完整简历交给 LLM 分析，
+    让结构化 chunk 和关键词都来自同一次完整解析。
+    """
+    return f"""你是一位资深招聘顾问和简历分析专家。请完整阅读下面的简历全文，并把它整理成结构化 JSON。
+
+必须遵守：
+1. 只输出一个合法 JSON object，不要输出任何解释、前言、Markdown、```json 代码块或多余文字。
+2. 必须使用下面固定字段名：summary、skills、work_experience、project_experience、education、achievements、keywords。
+3. 只抽取简历中真实出现或能直接推断的信息，不要编造公司、项目、学历、成果、数字或工具。
+4. 不确定的字段填空字符串或空数组。
+5. 每段工作经历和项目经历都要尽量保留关键职责、成果、工具、业务方向和量化指标。
+6. keywords 控制在 15-40 个，覆盖技能、工具、业务方向、岗位方向和重要成果，按重要性排序。
+7. summary 控制在 80 个中文字以内。
+
+输出 JSON 格式示例：
+{{
+  "summary": "候选人的简短职业概况，80字以内",
+  "skills": ["技能或工具1", "技能或工具2"],
+  "work_experience": [
+    {{
+      "company": "公司名称",
+      "role": "职位名称",
+      "period": "起止时间",
+      "description": "主要职责和成果"
+    }}
+  ],
+  "project_experience": [
+    {{
+      "name": "项目名称",
+      "description": "项目背景和目标",
+      "responsibilities": "候选人的职责",
+      "results": "可量化成果或业务结果",
+      "tools": ["工具或技术1", "工具或技术2"]
+    }}
+  ],
+  "education": [
+    {{
+      "school": "学校",
+      "major": "专业",
+      "degree": "学历",
+      "period": "时间"
+    }}
+  ],
+  "achievements": ["成果1", "成果2"],
+  "keywords": ["核心关键词1", "核心关键词2"]
+}}
+
+简历全文：
+{resume_text}
+"""
+
+
+def _parse_resume_profile(content: str) -> ResumeProfile | None:
+    """解析 LLM 返回的 ResumeProfile；不是纯 JSON 就判失败。"""
+    try:
+        data = json.loads(content.strip())
+        return ResumeProfile.model_validate(data)
+    except Exception as e:  # noqa: BLE001 - 解析失败统一走兜底
+        log.warning("简历结构化 JSON 解析失败: %s", e)
+        return None
+
+
+def _load_cached_resume_profile(resume_text: str) -> ResumeProfile | None:
+    cache_file = _profile_cache_file(resume_text)
+    if not cache_file.exists():
+        return None
+    try:
+        with cache_file.open("r", encoding="utf-8") as f:
+            return ResumeProfile.model_validate(json.load(f))
+    except Exception as e:  # noqa: BLE001 - 缓存坏了就重新解析
+        log.warning("读取结构化简历缓存失败: %s", e)
+        return None
+
+
+def _save_resume_profile_cache(resume_text: str, profile: ResumeProfile) -> None:
+    cache_file = _profile_cache_file(resume_text)
+    try:
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        with cache_file.open("w", encoding="utf-8") as f:
+            json.dump(profile.model_dump(), f, ensure_ascii=False, indent=2)
+    except Exception as e:  # noqa: BLE001 - 缓存失败不影响主流程
+        log.warning("保存结构化简历缓存失败: %s", e)
+
+
+def _llm_extract_resume_profile(resume_text: str) -> ResumeProfile | None:
+    """使用 LLM 对完整简历做结构化解析。"""
     try:
         client, llm_model = _build_client()
     except RuntimeError as e:
         # _build_client 对缺 key / 缺 model 都抛 RuntimeError——把真实 message
         # 透出来，别一律写成"LLM_API_KEY 未设置"误导用户去改错的变量。
-        log.warning("LLM 未配置好，无法提取专属关键词：%s", e)
-        return []
+        log.warning("LLM 未配置好，无法结构化解析简历：%s", e)
+        return None
 
-    prompt = f"""你是一位资深的 HR 和技术专家。请从以下简历中提取出该候选人的核心技术栈、使用的工具、以及相关的业务方向。
-要求：
-1. 结果必须是一个纯 JSON 数组，包含字符串格式的关键词（例如：["Java", "Spring Boot", "后端开发", "MySQL"]）。
-2. 不要包含任何多余的文本、解释或 Markdown 代码块标记（不要写 ```json）。
-3. 关键词数量在 10 到 30 个之间，越核心的技术越靠前。
-
-简历内容：
-{resume_text[:3000]}
-"""
-    t0 = time.monotonic()
     try:
         response = _call_chat_completion(
             client,
             model=llm_model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": _resume_profile_prompt(resume_text)}],
             temperature=0.1,
-            max_tokens=300,
+            max_tokens=PROFILE_MAX_TOKENS,
         )
         content = _completion_content(response)
-        # 简单清理可能带上的 Markdown 标记
-        content = content.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        keywords = json.loads(content)
-        if isinstance(keywords, list) and all(isinstance(k, str) for k in keywords):
-            log.info("🎯 LLM 成功提取出专属关键词: %s", keywords)
-            return keywords
-        log.warning("LLM 返回的格式不是字符串数组: %s", content)
+        profile = _parse_resume_profile(content)
+        if profile is not None:
+            log.info("🎯 LLM 成功结构化解析简历，提取关键词 %d 个", len(profile.keywords))
+            return profile
     except Exception as e:
-        log.warning("LLM 提取关键词失败 (%s)，无法提取专属关键词", e)
+        log.warning("LLM 结构化解析简历失败 (%s)，将走兜底方案", e)
 
-    return []
+    return None
 
 
-def extract_keywords_from_text(resume_text: str) -> list[str]:
-    """从简历全文中提取技术关键词（大小写不敏感），带有本地持久化缓存。"""
-    text_hash = hashlib.md5(resume_text.encode('utf-8')).hexdigest()
-    cache_dir = Path("vectorstores") / text_hash
-    cache_file = cache_dir / "keywords.json"
+def extract_resume_profile(resume_text: str) -> ResumeProfile | None:
+    """读取或生成结构化简历 profile。"""
+    cached = _load_cached_resume_profile(resume_text)
+    if cached is not None:
+        log.info("✅ 已从本地缓存读取结构化简历 profile")
+        return cached
 
-    if cache_file.exists():
-        try:
-            with open(cache_file, "r", encoding="utf-8") as f:
-                cached_keywords = json.load(f)
-                if isinstance(cached_keywords, list):
-                    log.info("✅ 已从本地缓存读取专属简历关键词（%d个）", len(cached_keywords))
-                    return cached_keywords
-        except Exception as e:
-            log.warning("读取缓存关键词失败: %s", e)
+    profile = _llm_extract_resume_profile(resume_text)
+    if profile is not None:
+        _save_resume_profile_cache(resume_text, profile)
+    return profile
 
-    keywords = _llm_extract_keywords(resume_text)
-    
-    # 存入缓存
+
+def _load_legacy_keywords_cache(resume_text: str) -> list[str] | None:
+    cache_file = _legacy_keywords_cache_file(resume_text)
+    if not cache_file.exists():
+        return None
     try:
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        with open(cache_file, "w", encoding="utf-8") as f:
+        with cache_file.open("r", encoding="utf-8") as f:
+            cached_keywords = json.load(f)
+            if isinstance(cached_keywords, list) and all(
+                isinstance(k, str) for k in cached_keywords
+            ):
+                log.info("✅ 已从本地缓存读取专属简历关键词（%d个）", len(cached_keywords))
+                return cached_keywords
+    except Exception as e:
+        log.warning("读取缓存关键词失败: %s", e)
+    return None
+
+
+def _save_legacy_keywords_cache(resume_text: str, keywords: list[str]) -> None:
+    cache_file = _legacy_keywords_cache_file(resume_text)
+    try:
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        with cache_file.open("w", encoding="utf-8") as f:
             json.dump(keywords, f, ensure_ascii=False, indent=2)
     except Exception as e:
         log.warning("保存缓存关键词失败: %s", e)
 
-    return keywords
+
+def keywords_from_resume_profile(profile: ResumeProfile | None) -> list[str]:
+    if profile is None:
+        return []
+    return [keyword.strip() for keyword in profile.keywords if keyword.strip()]
+
+
+def extract_keywords_from_text(
+    resume_text: str,
+    resume_profile: ResumeProfile | None | object = _RESUME_PROFILE_NOT_PROVIDED,
+) -> list[str]:
+    """从结构化简历 profile 中读取关键词，失败时回退旧关键词缓存。"""
+    # 不传 resume_profile 时才主动解析；显式传入 None 表示上游已经尝试过且失败，
+    # 这里直接走缓存兜底，避免一次运行里重复调用 LLM。
+    profile = (
+        extract_resume_profile(resume_text)
+        if resume_profile is _RESUME_PROFILE_NOT_PROVIDED
+        else resume_profile
+    )
+    keywords = keywords_from_resume_profile(
+        profile if isinstance(profile, ResumeProfile) else None
+    )
+    if keywords:
+        _save_legacy_keywords_cache(resume_text, keywords)
+        return keywords
+
+    cached_keywords = _load_legacy_keywords_cache(resume_text)
+    return cached_keywords or []
 
 
 def extract_keywords_from_resume(pdf_path: str) -> list[str]:

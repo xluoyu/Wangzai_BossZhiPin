@@ -28,7 +28,11 @@ from pathlib import Path
 import nodriver as uc
 from dotenv import load_dotenv
 
-from boss_zhipin.models.job_matcher import extract_keywords_from_text, extract_resume_text
+from boss_zhipin.models.job_matcher import (
+    extract_keywords_from_text,
+    extract_resume_profile,
+    extract_resume_text,
+)
 # LLM_PRESETS / is_llm_configured 住在轻量的 boss_zhipin.providers，
 # 让 PyTauri 的 Config 命令不被 cli.py 的重 import 链拖累
 # （cli 的 vectorization import 会触发 sentence_transformers → torch，3-10s）。
@@ -139,10 +143,11 @@ async def run_provider(
     """
     # 从简历自动提取关键词和全文（用于职位匹配过滤）
     resume_text = extract_resume_text(resume_path)
-    resume_keywords = extract_keywords_from_text(resume_text)
+    resume_profile = extract_resume_profile(resume_text)
+    resume_keywords = extract_keywords_from_text(resume_text, resume_profile)
     log.info("📋 从简历中提取到 %d 个关键词: %s", len(resume_keywords), resume_keywords)
     # 提前为所有 provider 创建向量库，用于语义粗筛
-    vectorstore = embed_resume(resume_text, "./vectorstores")
+    vectorstore = embed_resume(resume_text, "./vectorstores", resume_profile=resume_profile)
     
     # LLM 匹配分阈值，低于该分跳过不投；可用 BOSS_MIN_MATCH_SCORE 覆盖。
     # 走 _int_env：GUI 填了非数字 / 越界也不崩 run，回退到 50 / 收敛到 0-100。
