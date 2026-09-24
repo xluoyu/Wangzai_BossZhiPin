@@ -5,10 +5,10 @@
 # boss_zhipin.tauri）完全不碰本目录。
 
 [package]
-name = "boss-zhipin"
+name = "wangzai-boss-zhipin"
 version = "0.6.0"
-description = "BOSS Zhipin Helper (PyTauri standalone)"
-authors = ["longsizhuo"]
+description = "Wangzai_BossZhiPin (PyTauri standalone)"
+authors = ["Wangzai"]
 edition = "2021"
 
 [lib]
@@ -18,7 +18,7 @@ name = "boss_zhipin_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "boss-zhipin"
+name = "wangzai-boss-zhipin"
 path = "src/main.rs"
 # pytauri/standalone 这个 feature 是 standalone 模式必开的，不开 main.rs 里
 # PythonInterpreterBuilder 这堆类型都没有

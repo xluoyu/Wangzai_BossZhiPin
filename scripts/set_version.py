@@ -98,7 +98,7 @@ def patch_cargo_lock(version: str) -> bool:
         return False
     text = lock.read_text(encoding="utf-8")
     new_text, n = re.subn(
-        r'(name = "boss-zhipin"\nversion = )"[^"]*"',
+        r'(name = "wangzai-boss-zhipin"\nversion = )"[^"]*"',
         lambda m: f'{m.group(1)}"{version}"',
         text,
         count=1,

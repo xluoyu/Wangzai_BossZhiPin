@@ -10,7 +10,7 @@
 #   $env:BOSS_PYEMBED_REBUILD = '1'; .\scripts\build_standalone.ps1   # 强制重建 pyembed
 #
 # 产物：
-#   src-tauri\target\bundle-release\boss-zhipin.exe                  （raw exe）
+#   src-tauri\target\bundle-release\wangzai-boss-zhipin.exe          （raw exe）
 #   src-tauri\target\bundle-release\bundle\nsis\*-setup.exe          （NSIS 安装器）
 #   src-tauri\target\bundle-release\bundle\msi\*.msi                 （MSI 安装器）
 #
@@ -103,7 +103,7 @@ Write-Host "==> 安装 boss_zhipin + 依赖到 pyembed（首次会拉 torch，�
 $env:PYTAURI_STANDALONE = '1'
 uv pip install --exact --compile-bytecode --break-system-packages `
     "--python=$EmbedPy" `
-    --reinstall-package=boss-zhipin-job-search `
+    --reinstall-package=wangzai-boss-zhipin `
     "$RepoRoot[standalone]"
 if ($LASTEXITCODE -ne 0) { throw "uv pip install 失败（exit $LASTEXITCODE）" }
 

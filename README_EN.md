@@ -6,6 +6,8 @@
 
 [中文](README.md) · [English](README_EN.md)
 
+> Maintained by Wangzai. This project is forked from [longsizhuo/BossZhiPin_Job_Search](https://github.com/longsizhuo/BossZhiPin_Job_Search); the original project and its copyright notice are retained under the [MIT License](LICENSE).
+
 Reads job descriptions from BOSS Zhipin, asks an LLM to write a polite cover-letter greeting, validates it, then sends it to the recruiter. Works with **any OpenAI-compatible endpoint** (DeepSeek / OpenAI / Claude / Qwen·Bailian / Zhipu GLM / Doubao / Kimi / local Ollama …) — set `LLM_BASE_URL` + `LLM_API_KEY` + `LLM_MODEL` and you're running.
 
 > The original author paused maintenance; a small group of us keeps it going. We've migrated to [uv](https://docs.astral.sh/uv/), dropped the langchain stack, and replaced Selenium with [nodriver](https://github.com/ultrafunkamsterdam/nodriver) (much steadier against BOSS's anti-bot).
@@ -36,8 +38,8 @@ Reads job descriptions from BOSS Zhipin, asks an LLM to write a polite cover-let
 
 ```bash
 # 1. Clone + install deps
-git clone https://github.com/longsizhuo/BossZhiPin_Job_Search.git
-cd BossZhiPin_Job_Search
+git clone https://github.com/xluoyu/Wangzai_BossZhiPin.git
+cd Wangzai_BossZhiPin
 uv sync
 
 # 2. Configure API keys

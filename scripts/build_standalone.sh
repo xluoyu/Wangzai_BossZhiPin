@@ -10,7 +10,7 @@
 #   ./scripts/build_standalone.sh            # 全量构建
 #   BOSS_PYEMBED_REBUILD=1 ./scripts/...     # 强制重建 pyembed
 #
-# 产物：src-tauri/target/bundle-release/bundle/macos/BOSS Zhipin Helper.app
+# 产物：src-tauri/target/bundle-release/bundle/macos/Wangzai_BossZhiPin.app
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -92,7 +92,7 @@ PYTAURI_STANDALONE=1 uv pip install \
     --compile-bytecode \
     --break-system-packages \
     --python="$EMBED_PY" \
-    --reinstall-package=boss-zhipin-job-search \
+    --reinstall-package=wangzai-boss-zhipin \
     "$REPO_ROOT[standalone]"
 
 # ---------- 3.5 删掉 pyembed 里的 BUILD 标记文件 ----------
@@ -133,7 +133,7 @@ cd "$REPO_ROOT"
 # ---------- 6. 产物自检 ----------
 APP=$(find "$REPO_ROOT/src-tauri/target" -maxdepth 4 -name "*.app" -path "*bundle-release*" | head -1)
 [[ -n "$APP" ]] || { echo "❌ 没找到 .app 产物"; exit 1; }
-BIN="$APP/Contents/MacOS/boss-zhipin"
+BIN="$APP/Contents/MacOS/wangzai-boss-zhipin"
 echo "==> 自检：binary 应链接 @rpath/libpython3.x，不能出现 Python3.framework"
 if otool -L "$BIN" | grep -q "Python3.framework"; then
     echo "❌ binary 链接到了系统 Python3.framework——PYO3_PYTHON 没生效？"

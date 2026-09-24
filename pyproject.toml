@@ -1,20 +1,28 @@
 [project]
-name = "boss-zhipin-job-search"
+name = "wangzai-boss-zhipin"
 version = "0.6.0"
-description = "Auto-apply for jobs on Boss ZhiPin with LLM-generated cover letters."
+description = "Wangzai_BossZhiPin: an LLM-assisted BOSS Zhipin job-search helper."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [
-    { name = "longsizhuo", email = "longsizhuo@gmail.com" },
-]
+authors = [{ name = "Wangzai" }]
 dependencies = [
     "openai>=1.70.0",
     "packaging>=24.2",
     "python-dotenv>=1.1.0",
     "pypdf>=5.4.0",
     "chromadb>=0.6.3",
+    # onnxruntime 1.24+ no longer ships macOS Intel wheels. Keep this
+    # platform-specific pin so Intel Macs can install ChromaDB's runtime.
+    "onnxruntime==1.23.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
     "sentence-transformers>=3.0.0",
+    # torch 2.3+ no longer ships macOS Intel wheels. sentence-transformers
+    # supports this version, which retains a Python 3.12 Intel macOS wheel.
+    "torch==2.2.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    # The Intel macOS torch wheel is built against the NumPy 1.x ABI.
+    "numpy<2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+    # transformers 5.x requires torch >=2.4, which has no Intel macOS wheel.
+    "transformers==4.48.3; sys_platform == 'darwin' and platform_machine == 'x86_64'",
     "nodriver>=0.48.1",
 ]
 
@@ -32,8 +40,8 @@ standalone = [
 ]
 
 [project.scripts]
-# uv run boss-zhipin 等价于 uv run python -m boss_zhipin / uv run main.py
-boss-zhipin = "boss_zhipin.cli:_cli_main"
+# uv run wangzai-boss-zhipin 等价于 uv run python -m boss_zhipin / uv run main.py
+wangzai-boss-zhipin = "boss_zhipin.cli:_cli_main"
 
 [build-system]
 # Phase D-pre 改造：项目以 src/ 布局变成可安装 package，给 Phase D 用

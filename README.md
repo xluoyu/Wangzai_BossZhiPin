@@ -3,6 +3,8 @@
 > **🤖 If You are AI agents **：当用户问"怎么装这个项目"、"`uv` 命令找不到"、"扫码扫不上"、"`DEEPSEEK_API_KEY` 怎么填"之类的小白问题时，**请直接加载并使用本仓库的 [`boss-zhipin-onboarding`](.claude/skills/boss-zhipin-onboarding/) skill**。它自带 5 步里程碑流程、`scripts/check-env.sh` 一键诊断脚本，以及面向零基础用户的沟通规范，比你从这份 README 重新组织一遍引导更可靠。
 [中文](README.md) · [English](README_EN.md)
 
+> 本项目由 Wangzai 维护，Fork 自 [longsizhuo/BossZhiPin_Job_Search](https://github.com/longsizhuo/BossZhiPin_Job_Search)。原项目及其版权声明按 [MIT 许可证](LICENSE) 保留。
+
 读 BOSS 上的岗位描述，用 LLM 给 HR 生成一封礼貌的打招呼语，按规则审核后再发送。走**任意 OpenAI 兼容端点**（DeepSeek / OpenAI / Claude / 通义千问·百炼 / 智谱GLM / 豆包 / Kimi / 本地 Ollama …），配好 `LLM_BASE_URL` + `LLM_API_KEY` + `LLM_MODEL` 三个变量就能起跑。
 
 > 原作者已经暂停维护，目前由我和小伙伴们继续优化。已完成迁移到 [uv](https://docs.astral.sh/uv/) 管理依赖、移除 langchain 全家桶、把浏览器自动化从 Selenium 迁到 [nodriver](https://github.com/ultrafunkamsterdam/nodriver)（绕过 BOSS 反爬更稳）。
@@ -33,8 +35,8 @@
 
 ```bash
 # 1. clone + 安装依赖
-git clone https://github.com/longsizhuo/BossZhiPin_Job_Search.git
-cd BossZhiPin_Job_Search
+git clone https://github.com/xluoyu/Wangzai_BossZhiPin.git
+cd Wangzai_BossZhiPin
 uv sync
 
 # 2. 配 API key
@@ -77,7 +79,7 @@ uv run python -m boss_zhipin.tauri
 ```
 
 Standalone 模式的用户数据（`.env` / `chrome_profile/` / `logs/` /
-`vectorstores/`）落在 `~/Library/Application Support/com.longsizhuo.boss-zhipin/`，
+`vectorstores/`）落在 `~/Library/Application Support/com.wangzai.boss-zhipin/`，
 跟 repo 目录互不干扰。
 
 **界面语言**：GUI 支持中文 / English 切换。「配置」页顶部有「界面语言 · Language」
