@@ -10,7 +10,7 @@ from sentence_transformers import SentenceTransformer
 
 from boss_zhipin.models.resume_profile import ResumeProfile
 
-EMBED_MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"
+EMBED_MODEL_NAME = "BAAI/bge-small-zh-v1.5"
 COLLECTION_NAME = "resume"
 CHUNK_SCHEMA_VERSION = "structured"
 MAX_STRUCTURED_CHUNK_CHARS = 700
