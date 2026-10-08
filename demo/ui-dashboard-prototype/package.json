@@ -1,0 +1,23 @@
+{
+  "name": "boss-greeter-dashboard-demo",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Boss 直聘自动打招呼控制台 UI 原型（仅假数据，不连接后端 / Tauri / 网络）",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}
