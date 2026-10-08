@@ -1,7 +1,8 @@
-import { Fragment, useRef, useState } from 'react'
+import { Fragment, useState } from 'react'
 import { HistoryCheck, HistoryFilter, HistoryRow, HistorySend } from '../types'
 import { HISTORY } from '../mockData'
-import { Button, Card, Icon, Pill } from '../components/ui'
+import { useRun } from '../runContext'
+import { Button, Icon } from '../components/ui'
 
 const SUMMARY = { total: 486, cost: '¥3.27', sent: 32, blocked: 3 }
 
@@ -13,25 +14,25 @@ const FILTERS: { key: HistoryFilter; label: string }[] = [
   { key: 'fail', label: '失败' },
 ]
 
-const CHECK_TONE: Record<HistoryCheck, 'ok' | 'warn' | 'danger' | 'accent'> = {
-  pass: 'ok',
-  blocked: 'danger',
-  dry: 'accent',
-  fail: 'danger',
-}
-const CHECK_TEXT: Record<HistoryCheck, string> = {
+const CHECK_LABEL: Record<HistoryCheck, string> = {
   pass: '通过',
   blocked: '拦截',
   dry: 'Dry',
   fail: '失败',
 }
-const SEND_TONE: Record<HistorySend, 'ok' | 'warn' | 'danger' | 'accent'> = {
-  sent: 'ok',
-  dry: 'accent',
-  blocked: 'danger',
-  fail: 'danger',
+const CHECK_TAG: Record<HistoryCheck, string> = {
+  pass: 'tag-ok',
+  blocked: 'tag-danger',
+  dry: 'tag-accent',
+  fail: 'tag-danger',
 }
-const SEND_TEXT: Record<HistorySend, string> = {
+const SEND_TAG: Record<HistorySend, string> = {
+  sent: 'tag-ok',
+  dry: 'tag-accent',
+  blocked: 'tag-danger',
+  fail: 'tag-danger',
+}
+const SEND_LABEL: Record<HistorySend, string> = {
   sent: '已发送',
   dry: 'Dry Run',
   blocked: '已拦截',
@@ -39,109 +40,102 @@ const SEND_TEXT: Record<HistorySend, string> = {
 }
 
 export function HistoryDemo() {
+  const { notify } = useRun()
   const [filter, setFilter] = useState<HistoryFilter>('all')
   const [expanded, setExpanded] = useState<string | null>(null)
-  const [toast, setToast] = useState('')
-  const timerRef = useRef<number | null>(null)
 
-  const showToast = (msg: string) => {
-    setToast(msg)
-    if (timerRef.current) clearTimeout(timerRef.current)
-    timerRef.current = window.setTimeout(() => setToast(''), 1800)
-  }
-
-  const rows: HistoryRow[] = HISTORY.filter((r) => {
-    if (filter === 'all') return true
-    return r.sendStatus === filter
-  })
+  const rows: HistoryRow[] = HISTORY.filter((r) => filter === 'all' || r.sendStatus === filter)
 
   const copyLog = (row: HistoryRow) => {
-    const text = `[${row.time}] ${row.model} | ${row.job} @ ${row.company}\n校验: ${CHECK_TEXT[row.check]} (${row.reason})\n日志: ${row.log}`
+    const text = `[${row.time}] ${row.model} | ${row.job} @ ${row.company}\n校验: ${CHECK_LABEL[row.check]} (${row.reason})\n日志: ${row.log}`
     try {
       navigator.clipboard?.writeText(text)
     } catch {
       /* 演示环境忽略 */
     }
-    showToast('已复制此条日志')
+    notify('已复制此条日志', 'success')
+  }
+
+  const toggleExpanded = (id: string) => {
+    setExpanded((cur) => (cur === id ? null : id))
   }
 
   return (
-    <div className="grid" style={{ gap: 16 }}>
-      <div className="summary-row">
-        <Card>
-          <div className="metric">
-            <div className="m-value">{SUMMARY.total}</div>
-            <div className="m-label">总调用次数（近 7 天）</div>
-          </div>
-        </Card>
-        <Card>
-          <div className="metric">
-            <div className="m-value">{SUMMARY.cost}</div>
-            <div className="m-label">估算成本</div>
-          </div>
-        </Card>
-        <Card>
-          <div className="metric">
-            <div className="m-value" style={{ color: 'var(--success)' }}>{SUMMARY.sent}</div>
-            <div className="m-label">已发送</div>
-          </div>
-        </Card>
-        <Card>
-          <div className="metric">
-            <div className="m-value" style={{ color: 'var(--danger)' }}>{SUMMARY.blocked}</div>
-            <div className="m-label">被拦截</div>
-          </div>
-        </Card>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* 汇总条 */}
+      <div className="audit-summary">
+        <div className="as-cell">
+          <span className="as-num">{SUMMARY.total}</span>
+          <span className="as-label">近 7 天调用</span>
+        </div>
+        <div className="as-cell">
+          <span className="as-num">{SUMMARY.cost}</span>
+          <span className="as-label">估算成本</span>
+        </div>
+        <div className="as-cell">
+          <span className="as-num ok">{SUMMARY.sent}</span>
+          <span className="as-label">已发送</span>
+        </div>
+        <div className="as-cell">
+          <span className="as-num danger">{SUMMARY.blocked}</span>
+          <span className="as-label">被拦截</span>
+        </div>
       </div>
 
-      <Card
-        title="招呼语记录"
-        right={
-          <div className="filter-bar">
+      <div className="panel">
+        <div className="panel-head">
+          <h3 className="panel-title">招呼语记录</h3>
+          <div className="seg">
             {FILTERS.map((f) => (
               <button
                 key={f.key}
-                className={`chip ${filter === f.key ? 'active' : ''}`}
+                className={filter === f.key ? 'active' : ''}
                 onClick={() => setFilter(f.key)}
               >
                 {f.label}
               </button>
             ))}
           </div>
-        }
-      >
-        <table className="table">
-          <thead>
-            <tr>
-              <th>时间</th>
-              <th>岗位 / 公司</th>
-              <th>模型</th>
-              <th>校验结果</th>
-              <th>发送状态</th>
-              <th>招呼语摘要</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <Fragment key={r.id}>
-                <tr onClick={() => setExpanded(expanded === r.id ? null : r.id)}>
-                  <td className="mono">{r.time}</td>
-                  <td>
-                    {r.job} <span className="muted">· {r.company}</span>
-                  </td>
-                  <td className="mono">{r.model}</td>
-                  <td>
-                    <Pill tone={CHECK_TONE[r.check]}>{CHECK_TEXT[r.check]}</Pill>
-                  </td>
-                  <td>
-                    <Pill tone={SEND_TONE[r.sendStatus]}>{SEND_TEXT[r.sendStatus]}</Pill>
-                  </td>
-                  <td style={{ maxWidth: 280 }}>{r.summary}</td>
-                </tr>
-                {expanded === r.id && (
-                  <tr className="row-detail-wrap">
-                    <td colSpan={6}>
-                      <div className="row-detail">
+        </div>
+        <div className="panel-body audit-scroll" style={{ padding: 0 }}>
+          <table className="audit-table">
+            <thead>
+              <tr>
+                <th style={{ paddingLeft: 14 }}>时间</th>
+                <th>岗位 / 公司</th>
+                <th>模型</th>
+                <th>校验</th>
+                <th>发送状态</th>
+                <th>招呼语摘要</th>
+                <th>详情</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <Fragment key={r.id}>
+                  <tr className={`row-main ${r.sendStatus}`}>
+                    <td className="mono" style={{ paddingLeft: 14 }}>{r.time}</td>
+                    <td>
+                      {r.job} <span className="muted">· {r.company}</span>
+                    </td>
+                    <td className="mono">{r.model}</td>
+                    <td><span className={`tag ${CHECK_TAG[r.check]}`}>{CHECK_LABEL[r.check]}</span></td>
+                    <td><span className={`tag ${SEND_TAG[r.sendStatus]}`}>{SEND_LABEL[r.sendStatus]}</span></td>
+                    <td className="summary-cell">{r.summary}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="detail-toggle"
+                        aria-expanded={expanded === r.id}
+                        onClick={() => toggleExpanded(r.id)}
+                      >
+                        {expanded === r.id ? '收起' : '展开'}
+                      </button>
+                    </td>
+                  </tr>
+                  {expanded === r.id && (
+                    <tr className="row-detail">
+                      <td colSpan={7}>
                         <div className="detail-grid">
                           <span className="k">JD 摘要</span>
                           <span>{r.jd}</span>
@@ -152,24 +146,24 @@ export function HistoryDemo() {
                           <span className="k">日志片段</span>
                           <span className="codebox">{r.log}</span>
                         </div>
-                        <div style={{ marginTop: 12 }}>
+                        <div style={{ padding: '0 14px 12px' }}>
                           <Button variant="ghost" onClick={() => copyLog(r)}>
                             <Icon name="copy" size={14} />
                             复制此条日志
                           </Button>
                         </div>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
-        {rows.length === 0 && <div className="muted" style={{ padding: 16 }}>该筛选条件下暂无记录</div>}
-      </Card>
-
-      {toast && <div className="toast">{toast}</div>}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+          {rows.length === 0 && (
+            <div className="muted" style={{ padding: 18, fontSize: 12.5 }}>该筛选条件下暂无记录</div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

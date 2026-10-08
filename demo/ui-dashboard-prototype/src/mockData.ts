@@ -1,6 +1,30 @@
-import { AccountInfo, ActivityItem, CheckStatus, FaqItem, HistoryRow, LogLine, PreCheck, ResumeSlice, Stage } from './types'
+import {
+  AccountInfo,
+  ActivityItem,
+  CheckStatus,
+  FaqItem,
+  HistoryRow,
+  LogLine,
+  PreCheck,
+  ReviewItem,
+  ResumeSlice,
+  Stage,
+} from './types'
 
 export const ACCOUNT: AccountInfo = { name: '陈思远', status: 'Boss 直聘 · 已连接' }
+
+export const APP_VERSION = 'v0.4.2 (demo)'
+
+// 运行环境摘要（status rail 用）
+export const ENV = {
+  account: '陈思远',
+  boss: '已连接',
+  resume: '已解析',
+  ai: 'DeepSeek ready',
+}
+
+export const CURRENT_TARGET = '前端开发（上海）'
+export const CURRENT_JOB = '前端开发工程师 · 星河互动'
 
 export const PRECHECKS: PreCheck[] = [
   { id: 'resume', label: '简历', status: 'ok', detail: '陈思远_前端开发_2026.pdf · 更新于 09:30' },
@@ -20,32 +44,78 @@ export const STAGES: Stage[] = [
   { key: 'log', label: '写入日志' },
 ]
 
-export const INITIAL_METRICS = { scanned: 68, generated: 46, approved: 43, sent: 32, blocked: 3, failed: 2 }
-
+// 审计时间线初始条目（结构化：动作 / 目标岗位 / 原因结果）
 export const SEED_ACTIVITIES: ActivityItem[] = [
-  { id: 'a1', time: '09:41:12', kind: 'scan', text: '已读取岗位：前端开发工程师 · 上海 · 星河互动' },
-  { id: 'a2', time: '09:41:20', kind: 'generate', text: '生成招呼语通过校验（匹配度 0.82）' },
-  { id: 'a3', time: '09:41:33', kind: 'skip', text: '跳过岗位：要求 5 年经验（当前 3 年）' },
-  { id: 'a4', time: '09:41:40', kind: 'block', text: '拦截异常招呼语：检测到模板重复率过高' },
-  { id: 'a5', time: '09:41:55', kind: 'log', text: '写入审计日志：batch-2026-10-08-09' },
+  { id: 'a1', time: '09:41:12', kind: 'scan', target: '前端开发工程师 · 星河互动', detail: '读取岗位与 JD' },
+  { id: 'a2', time: '09:41:20', kind: 'generate', target: '前端开发工程师 · 星河互动', detail: '生成通过校验', score: 0.82 },
+  { id: 'a3', time: '09:41:33', kind: 'skip', target: '高级前端 · 云栖科技', detail: '经验要求 5 年，当前 3 年' },
+  { id: 'a4', time: '09:41:40', kind: 'block', target: 'React 开发 · 某外包公司', detail: '命中排除关键词「外包」' },
+  { id: 'a5', time: '09:41:55', kind: 'log', target: 'letters.jsonl', detail: '写入审计日志 batch-2026-10-08-09' },
+]
+
+export const REVIEW_QUEUE: ReviewItem[] = [
+  {
+    id: 'r1',
+    seq: 69,
+    status: 'ready',
+    job: '前端开发工程师',
+    company: '星河互动',
+    score: 0.82,
+    jd:
+      '岗位职责：负责 C 端活动页与业务中台前端开发，参与核心页面性能优化、组件库建设与埋点治理；与产品、设计、后端协作推进需求落地。\n\n任职要求：3 年以上 React / TypeScript 经验，熟悉 Vite、状态管理、浏览器性能分析；有复杂表单、营销活动或中后台系统经验优先。\n\n加分项：有首屏性能优化、组件库治理、自动化测试经验。',
+    evidence: ['React 性能优化', '营销中台重构', '首屏加载 3.2s→1.1s'],
+    greeting:
+      '您好，我是陈思远，3 年 React 经验，主导过营销中台重构，首屏加载从 3.2s 优化到 1.1s，和岗位要求比较契合，想进一步沟通。',
+    checks: ['长度合规', '中文通过', '未命中黑名单', '重复率 0.18'],
+  },
+  {
+    id: 'r2',
+    seq: 70,
+    status: 'needs_edit',
+    job: '高级前端开发',
+    company: '云栖科技',
+    score: 0.76,
+    jd:
+      '岗位职责：负责中后台平台的前端架构设计、微前端接入、公共组件沉淀与工程化规范建设；推动研发流程提效。\n\n任职要求：熟悉 React / TypeScript，理解微前端方案，有组件库、脚手架或构建优化实践；能独立推进跨团队协作。\n\n风险提示：岗位标题为高级前端，部分职责偏架构，需要突出具体成果。',
+    evidence: ['微前端 qiankun', '构建提速', '组件库治理'],
+    greeting:
+      '您好，看到贵司高级前端岗位，我做过 qiankun 微前端落地、组件库治理和构建提速，希望有机会进一步沟通岗位细节。',
+    checks: ['长度合规', '中文通过', '语气略模板化'],
+    issue: '建议编辑：突出一个具体成果，减少泛化表达。',
+  },
+  {
+    id: 'r3',
+    seq: 71,
+    status: 'blocked',
+    job: 'React 开发',
+    company: '某外包公司',
+    score: 0.41,
+    jd:
+      '岗位职责：驻场参与客户侧 React 项目开发，按需求完成业务组件与页面交付，配合项目经理进行进度汇报。\n\n任职要求：熟悉 React，能接受驻场工作节奏，有外包项目经验优先。\n\n风险提示：岗位描述包含「外包」「驻场」等排除关键词，且匹配度低于当前阈值。',
+    evidence: ['React 业务组件', '驻场交付'],
+    greeting: '（已拦截）岗位含排除关键词「外包」，不建议发送。',
+    checks: ['命中排除关键词', '低于匹配阈值', '禁止直接发送'],
+    issue: '命中排除关键词「外包」，需跳过或重新生成为 SKIP 记录。',
+  },
 ]
 
 export const SEED_LOGS: LogLine[] = [
   { id: 'l1', time: '09:40:01', level: 'INFO', text: '引擎启动，加载配置 .env' },
-  { id: 'l2', time: '09:40:02', level: 'DEBUG', text: 'Chrome profile 路径: /profiles/boss-default' },
+  { id: 'l2', time: '09:40:02', level: 'DEBUG', text: 'Chrome profile: /profiles/boss-default' },
   { id: 'l3', time: '09:40:05', level: 'INFO', text: 'AI 端点连通性检测通过 (DeepSeek)' },
   { id: 'l4', time: '09:41:55', level: 'INFO', text: 'audit log flushed: batch-2026-10-08-09' },
 ]
 
-export const ACTIVITY_POOL: { kind: ActivityItem['kind']; text: string }[] = [
-  { kind: 'scan', text: '已读取岗位：高级前端开发 · 杭州 · 云栖科技' },
-  { kind: 'generate', text: '生成招呼语通过校验（匹配度 0.79）' },
-  { kind: 'skip', text: '跳过岗位：城市不匹配（要求 北京）' },
-  { kind: 'block', text: '拦截异常招呼语：命中敏感词黑名单' },
-  { kind: 'generate', text: '生成招呼语通过校验（匹配度 0.88）' },
-  { kind: 'scan', text: '已读取岗位：前端架构师 · 上海 · 启明网络' },
-  { kind: 'log', text: '写入审计日志：batch-2026-10-08-10' },
-  { kind: 'generate', text: '生成招呼语通过校验（匹配度 0.75）' },
+// 运行中循环生成的审计条目模板
+export const ACTIVITY_TEMPLATES: Omit<ActivityItem, 'id' | 'time'>[] = [
+  { kind: 'scan', target: '高级前端开发 · 云栖科技', detail: '读取岗位与 JD' },
+  { kind: 'generate', target: '高级前端开发 · 云栖科技', detail: '生成通过校验', score: 0.79 },
+  { kind: 'skip', target: '前端专家 · 远方科技', detail: '城市不匹配（要求 北京）' },
+  { kind: 'block', target: 'React 开发 · 某外包公司', detail: '命中排除关键词「外包」' },
+  { kind: 'generate', target: '前端架构师 · 启明网络', detail: '生成通过校验', score: 0.88 },
+  { kind: 'scan', target: '前端开发 · 海纳信息', detail: '读取岗位与 JD' },
+  { kind: 'log', target: 'letters.jsonl', detail: '写入审计日志' },
+  { kind: 'generate', target: '资深前端 · 极光软件', detail: '生成通过校验', score: 0.85 },
 ]
 
 export const LOG_POOL: { level: LogLine['level']; text: string }[] = [
@@ -65,10 +135,34 @@ export const RESUME = {
   parseStatus: '已完成解析',
   vectorStatus: '向量库已更新（312 切片）',
   slices: [
-    { id: 's1', title: '项目经历', content: '主导公司内 C 端营销中台重构，负责组件库与构建提速，首屏加载从 3.2s 降至 1.1s。' },
-    { id: 's2', title: '技术栈', content: 'React / TypeScript / Vite / Node.js / 微前端 qiankun / 单元测试 Vitest。' },
-    { id: 's3', title: '业务成果', content: '建立前端发布卡口与自动化回归，线上故障率下降 41%；带教 2 名应届生。' },
-    { id: 's4', title: '软技能', content: '跨团队推动设计-研发协作规范，输出 12 篇内部技术文档。' },
+    {
+      id: 's1',
+      title: '项目经历',
+      content: '主导公司内 C 端营销中台重构，负责组件库与构建提速，首屏加载从 3.2s 降至 1.1s。',
+      hit: '被「前端开发工程师 · 星河互动」召回',
+      source: '来源：第 2 页 / 工作经历',
+    },
+    {
+      id: 's2',
+      title: '技术栈',
+      content: 'React / TypeScript / Vite / Node.js / 微前端 qiankun / 单元测试 Vitest。',
+      hit: '被「前端架构师 · 启明网络」召回',
+      source: '来源：第 1 页 / 技能清单',
+    },
+    {
+      id: 's3',
+      title: '业务成果',
+      content: '建立前端发布卡口与自动化回归，线上故障率下降 41%；带教 2 名应届生。',
+      hit: '被「资深前端 · 极光软件」召回',
+      source: '来源：第 3 页 / 业绩',
+    },
+    {
+      id: 's4',
+      title: '软技能',
+      content: '跨团队推动设计-研发协作规范，输出 12 篇内部技术文档。',
+      hit: '被「高级前端 · 云栖科技」召回',
+      source: '来源：第 4 页 / 自我评价',
+    },
   ] as ResumeSlice[],
 }
 
@@ -101,7 +195,7 @@ export const CONFIG_DEFAULTS = {
 
 export const FAQ: FaqItem[] = [
   { id: 'f1', q: '需要扫码登录', a: '打开「运行」页，点击「检查登录态」会唤起 Chrome 并展示二维码，用手机 Boss 直聘扫码即可。登录态默认保留 7 天。' },
-  { id: 'f2', q: 'API Key 缺失', a: '进入「配置」页，填写 LLM_API_KEY。Key 仅保存在本地 .env，不会上传。缺失时运行前检查会标红拦截。' },
+  { id: 'f2', q: 'API Key 缺失', a: '进入「配置」页，点击「替换 Key」填写 LLM_API_KEY。Key 仅保存在本地 .env，不会上传。缺失时运行前检查会标红拦截。' },
   { id: 'f3', q: '简历未上传', a: '在「简历」页点击「替换简历」选择 PDF，系统会重新解析并建立向量库。未上传时不会发起任何发送。' },
   { id: 'f4', q: 'Chrome profile 被锁', a: '通常是上次进程未正常退出。关闭所有 Chrome 实例后点击「环境体检」重试；仍失败可删除 profiles 目录重新初始化。' },
   { id: 'f5', q: 'BOSS 页面加载失败', a: '多为网络或登录态失效。先点「刷新」与「检查登录态」，若持续失败请复制诊断信息到「帮助」页的「问 AI」提交。' },
@@ -112,7 +206,14 @@ export const DIAGNOSTIC: { label: string; status: CheckStatus; detail: string }[
   { label: '简历', status: 'ok', detail: '已上传并解析（312 切片）' },
   { label: 'LLM', status: 'ok', detail: 'DeepSeek 端点可用' },
   { label: '日志目录', status: 'ok', detail: '~/Library/Logs/boss-greeter 可写' },
-  { label: '当前版本', status: 'ok', detail: 'v0.4.2 (demo)' },
+  { label: '版本', status: 'ok', detail: APP_VERSION },
+]
+
+// 最近错误摘要（帮助页假模块）
+export const RECENT_ERRORS: { time: string; level: LogLevel; text: string }[] = [
+  { time: '09:33:21', level: 'ERROR', text: 'JD 抓取超时 job=蓝鲸数据（已重试 2 次）' },
+  { time: '09:12:04', level: 'WARN', text: '模板重复率 0.41 超过 0.35 上限，已拦截' },
+  { time: '08:55:47', level: 'WARN', text: '命中排除关键词「外包」，跳过岗位' },
 ]
 
 export const HELP_PROMPT =

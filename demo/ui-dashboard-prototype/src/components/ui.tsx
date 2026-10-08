@@ -7,21 +7,23 @@ export function Card({
   right,
   children,
   className,
+  bodyClass,
 }: {
   title?: ReactNode
   right?: ReactNode
   children: ReactNode
   className?: string
+  bodyClass?: string
 }) {
   return (
-    <section className={`card ${className ?? ''}`}>
+    <section className={`panel ${className ?? ''}`}>
       {(title || right) && (
-        <header className="card-head">
-          {title && <h3 className="card-title">{title}</h3>}
-          {right && <div className="card-head-right">{right}</div>}
+        <header className="panel-head">
+          {title && <h3 className="panel-title">{title}</h3>}
+          {right && <div>{right}</div>}
         </header>
       )}
-      <div className="card-body">{children}</div>
+      <div className={`panel-body ${bodyClass ?? ''}`}>{children}</div>
     </section>
   )
 }
@@ -35,7 +37,10 @@ export function Button({
   children,
   className,
   ...rest
-}: { variant?: 'accent' | 'ghost' | 'danger' | 'success'; children: ReactNode } & ButtonHTMLAttributes<HTMLButtonElement>) {
+}: {
+  variant?: 'accent' | 'ghost' | 'danger' | 'success'
+  children: ReactNode
+} & ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button className={`btn btn-${variant} ${className ?? ''}`} {...rest}>
       {children}
@@ -46,37 +51,57 @@ export function Button({
 export function IconButton({
   name,
   title,
+  ariaLabel,
   onClick,
 }: {
   name: string
   title?: string
+  ariaLabel?: string
   onClick?: () => void
 }) {
   return (
-    <button className="icon-btn" title={title} onClick={onClick}>
+    <button className="icon-btn" title={title} aria-label={ariaLabel ?? title ?? name} onClick={onClick}>
       <Icon name={name} size={18} />
     </button>
   )
 }
 
+// tone 决定“开启”时的语义色：'safe' = 绿色（安全），'danger' = 红色（危险）
 export function Toggle({
   checked,
   onChange,
   labels,
+  tone = 'danger',
 }: {
   checked: boolean
   onChange: (v: boolean) => void
   labels?: [string, string]
+  tone?: 'safe' | 'danger'
 }) {
+  const onColor = checked ? (tone === 'safe' ? 'var(--success)' : 'var(--danger)') : 'var(--bg-elevated)'
+  const onBorder = checked
+    ? tone === 'safe'
+      ? 'rgba(79,179,95,0.5)'
+      : 'var(--danger-border)'
+    : 'var(--border)'
   return (
     <button
       type="button"
-      className={`toggle ${checked ? 'on' : ''}`}
+      className="toggle"
       onClick={() => onChange(!checked)}
       role="switch"
       aria-checked={checked}
+      aria-label={labels ? `${labels[0]} / ${labels[1]}` : '切换开关'}
     >
-      <span className="toggle-knob" />
+      <span
+        className="toggle-knob"
+        style={{ background: onColor, borderColor: onBorder }}
+      >
+        <span
+          className="toggle-knob-dot"
+          style={{ transform: checked ? 'translateX(20px)' : 'translateX(0)' }}
+        />
+      </span>
       {labels && (
         <span className="toggle-labels">
           <span className={!checked ? 'active' : ''}>{labels[0]}</span>
@@ -155,12 +180,6 @@ const ICONS: Record<string, ReactNode> = {
     </>
   ),
   chevron: <path d="M6 9l6 6 6-6" />,
-  search: (
-    <>
-      <circle cx="11" cy="11" r="7" />
-      <path d="M21 21l-4-4" />
-    </>
-  ),
 }
 
 export function Icon({ name, size = 18 }: { name: string; size?: number }) {

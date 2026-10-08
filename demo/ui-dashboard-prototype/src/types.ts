@@ -19,13 +19,16 @@ export interface Stage {
   label: string
 }
 
-export type ActivityKind = 'scan' | 'generate' | 'skip' | 'block' | 'log'
+export type ActivityKind = 'scan' | 'generate' | 'skip' | 'block' | 'approve' | 'log'
 
+// 审计时间线条目：时间 + 动作类型 + 目标岗位 + 原因/结果（含匹配度）
 export interface ActivityItem {
   id: string
   time: string
   kind: ActivityKind
-  text: string
+  target: string
+  detail: string
+  score?: number
 }
 
 export type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG'
@@ -41,6 +44,9 @@ export interface ResumeSlice {
   id: string
   title: string
   content: string
+  // RAG 召回语境
+  hit: string // 被哪条 JD 召回
+  source: string // 来源段落标签
 }
 
 export type HistoryCheck = 'pass' | 'blocked' | 'dry' | 'fail'
@@ -62,6 +68,22 @@ export interface HistoryRow {
   log: string
 }
 
+export type ReviewStatus = 'ready' | 'needs_edit' | 'blocked' | 'approved'
+
+export interface ReviewItem {
+  id: string
+  seq: number
+  status: ReviewStatus
+  job: string
+  company: string
+  score: number
+  jd: string
+  evidence: string[]
+  greeting: string
+  checks: string[]
+  issue?: string
+}
+
 export interface FaqItem {
   id: string
   q: string
@@ -72,3 +94,5 @@ export interface AccountInfo {
   name: string
   status: string
 }
+
+export type ToastTone = 'info' | 'success' | 'warn' | 'danger'

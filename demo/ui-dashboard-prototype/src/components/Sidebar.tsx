@@ -21,10 +21,10 @@ export function Sidebar({
   return (
     <aside className="sidebar">
       <div className="brand">
-        <div className="brand-mark">B</div>
+        <div className="brand-mark">招</div>
         <div className="brand-text">
-          <div className="brand-title">Boss 自动招呼</div>
-          <div className="brand-sub">控制台</div>
+          <div className="brand-title">BOSS 自动招呼</div>
+          <div className="brand-sub">本地控制台</div>
         </div>
       </div>
 
@@ -35,7 +35,7 @@ export function Sidebar({
             className={`nav-item ${active === n.key ? 'active' : ''}`}
             onClick={() => onChange(n.key)}
           >
-            <Icon name={n.icon} size={18} />
+            <Icon name={n.icon} size={17} />
             <span>{n.label}</span>
           </button>
         ))}
