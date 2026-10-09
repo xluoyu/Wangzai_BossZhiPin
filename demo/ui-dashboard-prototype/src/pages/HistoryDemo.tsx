@@ -3,6 +3,10 @@ import { HistoryCheck, HistoryFilter, HistoryRow, HistorySend } from '../types'
 import { HISTORY } from '../mockData'
 import { useRun } from '../runContext'
 import { Button, Icon } from '../components/ui'
+import {
+  JobDescriptionDrawer,
+  JobDescriptionDrawerData,
+} from '../components/JobDescriptionDrawer'
 
 const SUMMARY = { total: 486, cost: '¥3.27', sent: 32, blocked: 3 }
 
@@ -43,6 +47,7 @@ export function HistoryDemo() {
   const { notify } = useRun()
   const [filter, setFilter] = useState<HistoryFilter>('all')
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [jdDrawer, setJdDrawer] = useState<JobDescriptionDrawerData | null>(null)
 
   const rows: HistoryRow[] = HISTORY.filter((r) => filter === 'all' || r.sendStatus === filter)
 
@@ -147,6 +152,19 @@ export function HistoryDemo() {
                           <span className="codebox">{r.log}</span>
                         </div>
                         <div style={{ padding: '0 14px 12px' }}>
+                          <Button
+                            variant="ghost"
+                            onClick={() =>
+                              setJdDrawer({
+                                job: r.job,
+                                company: r.company,
+                                jd: r.jd,
+                              })
+                            }
+                          >
+                            <Icon name="eye" size={14} />
+                            详细 JD
+                          </Button>
                           <Button variant="ghost" onClick={() => copyLog(r)}>
                             <Icon name="copy" size={14} />
                             复制此条日志
@@ -164,6 +182,8 @@ export function HistoryDemo() {
           )}
         </div>
       </div>
+
+      <JobDescriptionDrawer data={jdDrawer} onClose={() => setJdDrawer(null)} />
     </div>
   )
 }

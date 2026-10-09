@@ -30,7 +30,7 @@ export const PRECHECKS: PreCheck[] = [
   { id: 'resume', label: '简历', status: 'ok', detail: '陈思远_前端开发_2026.pdf · 更新于 09:30' },
   { id: 'ai', label: 'AI 端点', status: 'ok', detail: 'DeepSeek · deepseek-chat · Key 已配置' },
   { id: 'chrome', label: 'Chrome 登录态', status: 'ok', detail: '已连接，登录有效期 7 天' },
-  { id: 'safety', label: '安全模式', status: 'ok', detail: '当前为 Dry Run（仅模拟，不真实发送）' },
+  { id: 'safety', label: '安全模式', status: 'ok', detail: '当前为 Dry Run（生成后需人工审核）' },
 ]
 
 export const STAGES: Stage[] = [
@@ -167,14 +167,14 @@ export const RESUME = {
 }
 
 export const HISTORY: HistoryRow[] = [
-  { id: 'h1', time: '09:41:20', job: '前端开发工程师', company: '星河互动', model: 'deepseek-chat', check: 'pass', sendStatus: 'dry', summary: '您好，看到贵司前端岗位与我的 React 经验契合…', jd: '负责 C 端 Web 应用开发与性能优化，熟练 React / TS。', greeting: '您好，我是陈思远，3 年 React 经验，主导过营销中台重构，首屏优化 3.2s→1.1s。', reason: 'Dry Run 模式，未真实发送', log: 'INFO verify pass score=0.82' },
-  { id: 'h2', time: '09:39:05', job: '高级前端开发', company: '云栖科技', model: 'deepseek-chat', check: 'pass', sendStatus: 'sent', summary: '您好，我在前端性能优化与微前端有较多实践…', jd: '负责中后台微前端架构与脚手架建设。', greeting: '您好，我做过 qiankun 微前端落地与构建提速，欢迎进一步沟通。', reason: '匹配度 0.79 通过人工审核阈值', log: 'INFO sent ok' },
-  { id: 'h3', time: '09:38:40', job: '前端架构师', company: '启明网络', model: 'deepseek-chat', check: 'blocked', sendStatus: 'blocked', summary: '（已拦截）模板重复率过高', jd: '负责前端架构与技术规范。', greeting: '（拦截）检测到模板重复率 0.41 超过上限 0.35。', reason: '模板重复率 0.41 超过 0.35 上限', log: 'WARN blocked repetition' },
-  { id: 'h4', time: '09:37:12', job: '前端开发（外包）', company: '某外包公司', model: 'deepseek-chat', check: 'blocked', sendStatus: 'blocked', summary: '（已拦截）命中排除关键词', jd: '驻场前端开发。', greeting: '（拦截）岗位含排除关键词「外包」。', reason: '命中排除关键词：外包', log: 'WARN keyword exclude' },
-  { id: 'h5', time: '09:35:50', job: 'React 开发', company: '海纳信息', model: 'deepseek-chat', check: 'dry', sendStatus: 'dry', summary: '您好，看到贵司 React 岗位…', jd: '负责 React 业务组件开发。', greeting: '您好，我熟悉 React 生态与状态管理，欢迎详聊。', reason: 'Dry Run 模拟发送', log: 'INFO dry-run' },
-  { id: 'h6', time: '09:33:21', job: '前端工程师', company: '蓝鲸数据', model: 'deepseek-chat', check: 'fail', sendStatus: 'fail', summary: '（失败）JD 抓取超时', jd: '（空）JD 抓取失败', greeting: '（失败）未生成', reason: 'JD 抓取超时，已重试 2 次', log: 'ERROR jd fetch timeout' },
-  { id: 'h7', time: '09:30:09', job: '资深前端', company: '极光软件', model: 'deepseek-chat', check: 'pass', sendStatus: 'sent', summary: '您好，我在前端工程化方面经验丰富…', jd: '负责前端工程化与 CI/CD。', greeting: '您好，我搭建过发布卡口与自动化回归，故障率下降 41%。', reason: '匹配度 0.85 通过审核', log: 'INFO sent ok' },
-  { id: 'h8', time: '09:28:44', job: '前端开发', company: '微影文化', model: 'deepseek-chat', check: 'dry', sendStatus: 'dry', summary: '您好，关注到贵司前端岗位…', jd: '负责官网与活动页开发。', greeting: '您好，我做过活动页性能优化，欢迎沟通。', reason: 'Dry Run 模拟发送', log: 'INFO dry-run' },
+  { id: 'h1', time: '09:41:20', job: '前端开发工程师', company: '星河互动', model: 'deepseek-chat', check: 'pass', sendStatus: 'dry', summary: '您好，看到贵司前端岗位与我的 React 经验契合…', jd: '岗位职责：负责 C 端活动页与业务中台前端开发，参与核心页面性能优化、组件库建设与埋点治理；与产品、设计、后端协作推进需求落地。\n\n任职要求：3 年以上 React / TypeScript 经验，熟悉 Vite、状态管理、浏览器性能分析；有复杂表单、营销活动或中后台系统经验优先。\n\n加分项：有首屏性能优化、组件库治理、自动化测试经验。', greeting: '您好，我是陈思远，3 年 React 经验，主导过营销中台重构，首屏优化 3.2s→1.1s。', reason: 'Dry Run 模式，已生成并等待人工审核', log: 'INFO verify pass score=0.82' },
+  { id: 'h2', time: '09:39:05', job: '高级前端开发', company: '云栖科技', model: 'deepseek-chat', check: 'pass', sendStatus: 'sent', summary: '您好，我在前端性能优化与微前端有较多实践…', jd: '岗位职责：负责中后台平台的前端架构设计、微前端接入、公共组件沉淀与工程化规范建设；推动研发流程提效。\n\n任职要求：熟悉 React / TypeScript，理解微前端方案，有组件库、脚手架或构建优化实践；能独立推进跨团队协作。\n\n优先条件：有 qiankun、Module Federation 或大型前端项目拆分经验。', greeting: '您好，我做过 qiankun 微前端落地与构建提速，欢迎进一步沟通。', reason: '真实发送模式，匹配度 0.79 校验通过后自动发送', log: 'INFO sent ok' },
+  { id: 'h3', time: '09:38:40', job: '前端架构师', company: '启明网络', model: 'deepseek-chat', check: 'blocked', sendStatus: 'blocked', summary: '（已拦截）模板重复率过高', jd: '岗位职责：负责前端整体架构规划、技术规范制定与核心基础设施建设；推动多团队统一开发、测试和发布流程。\n\n任职要求：8 年以上前端开发经验，熟悉 React、TypeScript、Node.js 和大型项目工程化；具备技术方案评审和团队协作能力。\n\n关注重点：需要具备复杂业务拆分、性能治理和持续交付体系建设经验。', greeting: '（拦截）检测到模板重复率 0.41 超过上限 0.35。', reason: '模板重复率 0.41 超过 0.35 上限', log: 'WARN blocked repetition' },
+  { id: 'h4', time: '09:37:12', job: '前端开发（外包）', company: '某外包公司', model: 'deepseek-chat', check: 'blocked', sendStatus: 'blocked', summary: '（已拦截）命中排除关键词', jd: '岗位职责：驻场参与客户侧 React 项目开发，按需求完成业务组件与页面交付，配合项目经理进行进度汇报。\n\n任职要求：熟悉 React，能接受驻场工作节奏，有外包项目经验优先。\n\n工作地点：客户现场；岗位描述包含「外包」「驻场」等风险关键词。', greeting: '（拦截）岗位含排除关键词「外包」。', reason: '命中排除关键词：外包', log: 'WARN keyword exclude' },
+  { id: 'h5', time: '09:35:50', job: 'React 开发', company: '海纳信息', model: 'deepseek-chat', check: 'dry', sendStatus: 'dry', summary: '您好，看到贵司 React 岗位…', jd: '岗位职责：负责 React 业务组件、管理后台页面和公共交互模块开发，参与需求评审与线上问题排查。\n\n任职要求：熟悉 React、TypeScript、状态管理和常见前端工程化工具；能够独立完成页面开发和联调。\n\n加分项：有数据可视化、权限系统或组件库开发经验。', greeting: '您好，我熟悉 React 生态与状态管理，欢迎详聊。', reason: 'Dry Run 模式，已生成并等待人工审核', log: 'INFO dry-run' },
+  { id: 'h6', time: '09:33:21', job: '前端工程师', company: '蓝鲸数据', model: 'deepseek-chat', check: 'fail', sendStatus: 'fail', summary: '（失败）JD 抓取超时', jd: '（空）JD 抓取失败：页面在规定时间内未返回完整岗位详情，当前仅确认岗位名称为「前端工程师」，职责、任职要求和福利信息尚未抓取。', greeting: '（失败）未生成', reason: 'JD 抓取超时，已重试 2 次', log: 'ERROR jd fetch timeout' },
+  { id: 'h7', time: '09:30:09', job: '资深前端', company: '极光软件', model: 'deepseek-chat', check: 'pass', sendStatus: 'sent', summary: '您好，我在前端工程化方面经验丰富…', jd: '岗位职责：负责前端工程化体系、构建工具链和 CI/CD 流程建设，提升研发效率与发布质量；参与核心业务模块开发和技术方案评审。\n\n任职要求：熟悉 React、TypeScript、Node.js、Webpack 或 Vite；有自动化测试、监控告警和持续交付实践。\n\n加分项：有前端质量平台、发布卡口或团队工程规范建设经验。', greeting: '您好，我搭建过发布卡口与自动化回归，故障率下降 41%。', reason: '真实发送模式，匹配度 0.85 校验通过后自动发送', log: 'INFO sent ok' },
+  { id: 'h8', time: '09:28:44', job: '前端开发', company: '微影文化', model: 'deepseek-chat', check: 'dry', sendStatus: 'dry', summary: '您好，关注到贵司前端岗位…', jd: '岗位职责：负责公司官网、活动页和品牌营销页面开发，配合设计师还原视觉稿并保障多端适配。\n\n任职要求：熟悉 HTML、CSS、JavaScript、React，了解响应式布局和页面性能优化；具备良好的视觉还原能力。\n\n工作内容：参与活动上线、埋点接入和线上问题修复。', greeting: '您好，我做过活动页性能优化，欢迎沟通。', reason: 'Dry Run 模式，已生成并等待人工审核', log: 'INFO dry-run' },
 ]
 
 export const CONFIG_DEFAULTS = {

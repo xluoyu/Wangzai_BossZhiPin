@@ -141,8 +141,10 @@ export function RunProvider({ children }: { children: ReactNode }) {
         const nm: Metrics = { ...m, scanned: m.scanned + 1 }
         if (gen.kind === 'generate') {
           nm.generated += 1
-          nm.approved += 1
-          if (modeRef.current === 'real') nm.sent += 1
+          if (modeRef.current === 'real') {
+            nm.approved += 1
+            nm.sent += 1
+          }
         }
         if (gen.kind === 'block') nm.blocked += 1
         return nm
@@ -169,13 +171,16 @@ export function RunProvider({ children }: { children: ReactNode }) {
     setReviewQueue(REVIEW_QUEUE)
     runLoop()
     setStatus('running')
-    notify(modeRef.current === 'real' ? '已开始真实发送' : '已开始 Dry Run', 'info')
+    notify(modeRef.current === 'real' ? '已开始真实发送' : '已开始 Dry Run，生成后等待审核', 'info')
   }, [runLoop, notify])
 
   const setMode = useCallback(
     (m: SafeMode) => {
       setModeState(m)
-      notify(m === 'real' ? '已切到真实发送模式，发送前将二次确认' : '已切到 Dry Run 安全模式', m === 'real' ? 'warn' : 'success')
+      notify(
+        m === 'real' ? '已切到真实发送模式，校验通过后直接发送' : '已切到 Dry Run，发送前必须人工审核',
+        m === 'real' ? 'warn' : 'success',
+      )
     },
     [notify],
   )
@@ -201,6 +206,11 @@ export function RunProvider({ children }: { children: ReactNode }) {
 
   const approveReview = useCallback(
     (id: string) => {
+      if (modeRef.current === 'real') {
+        notify('真实发送模式不进入单条审核流程', 'warn')
+        return
+      }
+
       const item = reviewQueue.find((r) => r.id === id)
       if (!item) return
       if (item.status === 'blocked') {
@@ -214,18 +224,15 @@ export function RunProvider({ children }: { children: ReactNode }) {
       setMetrics((m) => ({
         ...m,
         approved: m.approved + 1,
-        sent: modeRef.current === 'real' ? m.sent + 1 : m.sent,
+        sent: m.sent + 1,
       }))
       pushActivity({
         kind: 'approve',
         target: `${item.job} · ${item.company}`,
-        detail: modeRef.current === 'real' ? '人工批准真实发送' : '人工批准 Dry Run 模拟发送',
+        detail: '人工审核通过并发送',
         score: item.score,
       })
-      notify(
-        modeRef.current === 'real' ? '已批准真实发送' : '已批准模拟发送',
-        modeRef.current === 'real' ? 'warn' : 'success',
-      )
+      notify('已通过审核并发送', 'success')
       window.setTimeout(() => {
         setReviewQueue((list) => list.filter((r) => r.id !== id))
       }, 900)

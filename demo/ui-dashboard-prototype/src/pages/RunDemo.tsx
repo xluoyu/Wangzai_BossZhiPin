@@ -3,6 +3,10 @@ import { ActivityItem, ReviewItem } from '../types'
 import { CURRENT_TARGET, STAGES } from '../mockData'
 import { useRun } from '../runContext'
 import { Button, Icon } from '../components/ui'
+import {
+  JobDescriptionDrawer,
+  JobDescriptionDrawerData,
+} from '../components/JobDescriptionDrawer'
 
 const ACT_LABEL: Record<ActivityItem['kind'], string> = {
   scan: '读取',
@@ -46,11 +50,11 @@ export function RunDemo() {
   const [logsOpen, setLogsOpen] = useState(false)
   const [confirmStop, setConfirmStop] = useState(false)
   const [confirmReal, setConfirmReal] = useState(false)
-  const [confirmApprove, setConfirmApprove] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('all')
   const [selectedReviewId, setSelectedReviewId] = useState<string | null>(null)
+  const [jdDrawer, setJdDrawer] = useState<JobDescriptionDrawerData | null>(null)
 
   const isReal = mode === 'real'
   const isRunning = status === 'running'
@@ -66,6 +70,28 @@ export function RunDemo() {
     ready: reviewQueue.filter((r) => r.status === 'ready').length,
     needs: reviewQueue.filter((r) => r.status === 'needs_edit' || r.status === 'blocked').length,
   }
+
+  const autoSendRows = reviewQueue.map((item) => {
+    if (item.status === 'blocked') {
+      return {
+        item,
+        label: isIdle ? '将拦截' : '已拦截',
+        detail: item.issue ?? '命中排除规则，未发送',
+      }
+    }
+    if (item.status === 'needs_edit') {
+      return {
+        item,
+        label: isIdle ? '待校验' : '已跳过',
+        detail: item.issue ?? '内容校验未达标，未发送',
+      }
+    }
+    return {
+      item,
+      label: isIdle ? '待发送' : '已发送',
+      detail: isIdle ? '启动后校验通过会自动发送' : '校验通过，系统已自动发送招呼语',
+    }
+  })
 
   const filteredReviews = useMemo(
     () => reviewQueue.filter((item) => reviewFilter === 'all' || item.status === reviewFilter),
@@ -108,11 +134,8 @@ export function RunDemo() {
 
   const requestApprove = (item: ReviewItem) => {
     const next = nextReviewAfter(item.id)
-    if (isReal) setConfirmApprove(item.id)
-    else {
-      run.approveReview(item.id)
-      setSelectedReviewId(next?.id ?? null)
-    }
+    run.approveReview(item.id)
+    setSelectedReviewId(next?.id ?? null)
   }
 
   const nextReviewAfter = (id: string): ReviewItem | null => {
@@ -138,7 +161,7 @@ export function RunDemo() {
   const mCells: { key: string; num: number; label: string; cls?: string }[] = [
     { key: 'scanned', num: metrics.scanned, label: '已扫描岗位' },
     { key: 'generated', num: metrics.generated, label: '已生成招呼语' },
-    { key: 'approved', num: metrics.approved, label: '已通过审核' },
+    { key: 'approved', num: metrics.approved, label: isReal ? '校验通过' : '已通过审核' },
     { key: 'sent', num: metrics.sent, label: '已发送', cls: 'send' },
     { key: 'blocked', num: metrics.blocked, label: '被拦截', cls: 'block' },
     { key: 'failed', num: metrics.failed, label: '失败 / 重试', cls: 'fail' },
@@ -186,7 +209,7 @@ export function RunDemo() {
           <div className="cp-risk">
             <Icon name="alert" size={16} />
             <span>
-              <b>真实发送模式</b>：将向 BOSS 直聘真实投递招呼语，且不可撤回。请确认运行前检查全部通过、并清楚发送对象。
+              <b>真实发送模式</b>：系统会自动扫描、生成并发送招呼语，不进入人工审核队列。请确认运行范围无误。
             </span>
           </div>
         )}
@@ -196,7 +219,11 @@ export function RunDemo() {
             <div className="cp-meta">
               当前目标：<b>{CURRENT_TARGET}</b> · 当前岗位：<b>{currentJob}</b>
               <span className="cp-review-stat">
-                待审核 <b>{reviewStats.total}</b> · 可发送 {reviewStats.ready} · 需处理 {reviewStats.needs}
+                {isReal ? (
+                  <>自动发送 · 校验通过即发送 · 无待审核队列</>
+                ) : (
+                  <>待审核 <b>{reviewStats.total}</b> · 可发送 {reviewStats.ready} · 需处理 {reviewStats.needs}</>
+                )}
               </span>
             </div>
             <div className="cp-stage-label">当前阶段</div>
@@ -245,6 +272,12 @@ export function RunDemo() {
             >
               真实发送
             </button>
+          </div>
+
+          <div className={`mode-note ${isReal ? 'danger' : ''}`}>
+            {isReal
+              ? '真实发送：扫描、生成、校验通过后直接发送。'
+              : 'Dry Run：扫描并生成招呼语，发送前必须人工审核。'}
           </div>
 
           <div style={{ flex: 1 }} />
@@ -298,20 +331,61 @@ export function RunDemo() {
         )}
       </div>
 
-      {/* 待审核招呼语 */}
-      <div className="review-panel">
+      {/* 待审核 / 自动发送 */}
+      <div className={`review-panel ${isReal ? 'auto-send' : ''}`}>
         <div className="review-head">
           <div>
-            <h3>待审核招呼语</h3>
-            <p>生成后先进入人工确认队列，批准后才进入发送 / Dry Run 记录。</p>
+            <h3>{isReal ? '真实发送流水' : '待审核招呼语'}</h3>
+            <p>
+              {isReal
+                ? '真实发送不会产生待审核项，校验通过的招呼语会被系统直接发送。'
+                : '生成后先进入人工确认队列，审核通过后才允许发送。'}
+            </p>
           </div>
           <div className="review-count">
-            <b>{reviewStats.total}</b>
-            <span>条待确认</span>
+            <b>{isReal ? metrics.sent : reviewStats.total}</b>
+            <span>{isReal ? '条已发送' : '条待确认'}</span>
           </div>
         </div>
 
-        {reviewQueue.length === 0 ? (
+        {isReal ? (
+          <div className="auto-send-body">
+            <div className="auto-send-summary">
+              <div>
+                <b>{metrics.generated}</b>
+                <span>已生成</span>
+              </div>
+              <div>
+                <b>{metrics.approved}</b>
+                <span>校验通过</span>
+              </div>
+              <div>
+                <b>{metrics.sent}</b>
+                <span>自动发送</span>
+              </div>
+              <div>
+                <b>{metrics.blocked}</b>
+                <span>规则拦截</span>
+              </div>
+            </div>
+            <div className="auto-send-note">
+              当前模式下，系统只保留发送流水、拦截原因和审计日志；如需逐条查看、编辑或批准，请切换到 Dry Run。
+            </div>
+            <div className="auto-send-list">
+              {autoSendRows.map(({ item, label, detail }) => (
+                <div className={`auto-send-row ${item.status}`} key={item.id}>
+                  <span className="auto-send-seq">#{item.seq}</span>
+                  <span className="auto-send-main">
+                    <span className="auto-send-title">{item.job} · {item.company}</span>
+                    <span className="auto-send-detail">{detail}</span>
+                  </span>
+                  <span className="auto-send-score">{item.score}</span>
+                  <span className="auto-send-status">{label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : reviewQueue.length === 0 ? (
           <div className="review-empty">
             当前没有待审核招呼语。运行时生成的新内容会先进入这里等待确认。
           </div>
@@ -369,6 +443,21 @@ export function RunDemo() {
                           <div className="review-title">
                             #{selectedReview.seq} {selectedReview.job}
                             <span> · {selectedReview.company}</span>
+                            <button
+                              type="button"
+                              className="jd-icon-button"
+                              aria-label="打开详细 JD"
+                              title="详细 JD"
+                              onClick={() =>
+                                setJdDrawer({
+                                  job: selectedReview.job,
+                                  company: selectedReview.company,
+                                  jd: selectedReview.jd,
+                                })
+                              }
+                            >
+                              <Icon name="eye" size={14} />
+                            </button>
                           </div>
                           <div className="review-meta">
                             匹配度 <b>{selectedReview.score}</b> · 命中 {selectedReview.evidence.join(' / ')}
@@ -415,15 +504,13 @@ export function RunDemo() {
                         ) : (
                           <>
                             <Button
-                              variant={isReal ? 'danger' : 'accent'}
+                              variant="accent"
                               disabled={!canApprove}
                               onClick={() => requestApprove(selectedReview)}
                             >
                               {selectedReview.status === 'approved'
                                 ? '已批准'
-                                : isReal
-                                  ? '批准真实发送'
-                                  : '批准模拟发送'}
+                                : '审核通过并发送'}
                             </Button>
                             <Button variant="ghost" onClick={() => beginEdit(selectedReview)}>
                               编辑
@@ -547,6 +634,8 @@ export function RunDemo() {
         </>
       )}
 
+      <JobDescriptionDrawer data={jdDrawer} onClose={() => setJdDrawer(null)} />
+
       {/* 真实发送二次确认 */}
       {confirmReal && (
         <div className="modal-mask" onClick={() => setConfirmReal(false)}>
@@ -556,7 +645,7 @@ export function RunDemo() {
               确认开始真实发送？
             </h3>
             <p>
-              真实发送会向 BOSS 直聘真实投递招呼语，且不可撤回。请确认运行前检查全部通过、并清楚发送对象与范围。
+              真实发送会向 BOSS 直聘真实投递招呼语，校验通过后直接发送且不可撤回。请确认运行前检查全部通过，并清楚发送对象与范围。
             </p>
             <div className="modal-actions">
               <Button variant="ghost" onClick={() => setConfirmReal(false)}>
@@ -570,37 +659,6 @@ export function RunDemo() {
                 }}
               >
                 确认真实发送
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 单条真实发送确认 */}
-      {confirmApprove && (
-        <div className="modal-mask" onClick={() => setConfirmApprove(null)}>
-          <div className="modal danger" onClick={(e) => e.stopPropagation()}>
-            <h3>
-              <Icon name="alert" size={18} />
-              确认发送这条招呼语？
-            </h3>
-            <p>
-              该操作会将当前审核项标记为人工批准，并在真实发送模式下模拟写入发送记录。
-            </p>
-            <div className="modal-actions">
-              <Button variant="ghost" onClick={() => setConfirmApprove(null)}>
-                取消
-              </Button>
-              <Button
-                variant="danger"
-                onClick={() => {
-                  const next = nextReviewAfter(confirmApprove)
-                  run.approveReview(confirmApprove)
-                  setSelectedReviewId(next?.id ?? null)
-                  setConfirmApprove(null)
-                }}
-              >
-                确认发送
               </Button>
             </div>
           </div>
