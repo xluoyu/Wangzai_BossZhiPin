@@ -144,7 +144,28 @@ sent_at
 
 ## 4. 实施步骤
 
-### 阶段一：任务存储层
+### 阶段一：任务存储层（已完成）
+
+**状态：已完成（2026-10-10）**
+
+**本阶段交付：**
+
+- 新增 `src/boss_zhipin/audit/task_store.py`，提供任务组、活动任务和终态任务的 JSONL 存储接口。
+- 支持任务组创建、计数累计、完成更新，以及按组 ID、状态和时间范围查询。
+- 支持活动任务创建、更新，以及移动到 `task_queue.jsonl` 的终态流转。
+- 使用进程内可重入锁保护读改写和移动操作；重写文件使用临时文件加 `os.replace`。
+- 对重复任务 ID、重复终态移动进行幂等保护；查询遇到坏 JSON 行时跳过并记录 warning。
+- 新增 `tests/test_task_store.py`，覆盖存储、状态流转、筛选、坏行容错、重复操作和 JSONL 合法性。
+
+**阶段验证：**
+
+- `uv run pytest -q tests/test_task_store.py`：9 passed。
+- `uv run python -m py_compile src/boss_zhipin/audit/task_store.py tests/test_task_store.py`：通过。
+
+**后续接入约束：**
+
+- 本阶段只实现存储层，没有接入 JD 获取、过滤、招呼语生成或发送流程。
+- `letters.jsonl` 和 `llm_calls.jsonl` 的现有写入逻辑未修改。
 
 新增 `src/boss_zhipin/audit/task_store.py`，集中处理 JSONL 的读写和状态流转：
 
@@ -158,7 +179,27 @@ sent_at
 
 JSONL 文件不存在时自动创建父目录；写入采用 UTF-8，并保证单条记录是一行合法 JSON。
 
-### 阶段二：JD 结构化获取
+### 阶段二：JD 结构化获取（已完成）
+
+**状态：已完成（2026-10-10）**
+
+**本阶段交付：**
+
+- 在 `finding_jobs.py` 新增 `JobDetails` 结构，统一承载 JD、公司名称、职位名称、完整 URL、缺失字段和错误信息。
+- 新增 `get_job_details_by_index()`，岗位卡链接优先作为完整 URL；点击详情后再用详情页 URL 兜底，不把列表页 URL 当作岗位 URL。
+- 保留 `get_job_description_by_index()` 旧接口，继续返回 `str | None`，现有主流程无需修改即可兼容。
+- 页面字段缺失时返回空值和 `missing_fields:*` 错误信息；点击失败或 JD 不可用时保留已读取的岗位元数据并返回明确错误。
+- 新增结构化获取、字段缺失、详情 URL 兜底和旧接口兼容测试。
+
+**阶段验证：**
+
+- `uv run pytest -q tests/test_finding_jobs_text.py`：34 passed。
+- `uv run pytest -q tests/test_finding_jobs_text.py tests/test_write_response_flow.py`：42 passed。
+
+**后续接入约束：**
+
+- 本阶段只扩展 JD 获取返回值，没有接入任务组、任务队列、过滤或发送状态写入。
+- 新增和修改的注释、docstring 使用中文；未修改 UI。
 
 修改 `src/boss_zhipin/website_oper/finding_jobs.py`：
 

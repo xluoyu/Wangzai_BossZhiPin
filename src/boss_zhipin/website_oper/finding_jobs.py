@@ -19,6 +19,7 @@ import logging
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
 
 import nodriver as uc
 from nodriver import Config
@@ -526,6 +527,72 @@ _JD_NOISE_LINES = frozenset(
 )
 
 
+@dataclass(frozen=True)
+class JobDetails:
+    """一次岗位抓取的结构化结果，供任务记录层保存。"""
+
+    jd: str = ""
+    company_name: str = ""
+    job_title: str = ""
+    job_url: str = ""
+    error: str | None = None
+    missing_fields: tuple[str, ...] = ()
+
+
+def _normalize_job_card_metadata(
+    metadata: dict | None,
+    *,
+    current_url: str = "",
+) -> JobDetails:
+    """整理岗位卡元数据，并明确标记缺失字段。"""
+    metadata = metadata or {}
+    company_name = str(metadata.get("company_name") or "").strip()
+    job_title = str(metadata.get("job_title") or "").strip()
+    job_url = str(metadata.get("job_url") or "").strip()
+    if not job_url and "/job_detail/" in current_url:
+        job_url = current_url.strip()
+
+    missing_fields = tuple(
+        field
+        for field, value in (
+            ("company_name", company_name),
+            ("job_title", job_title),
+            ("job_url", job_url),
+        )
+        if not value
+    )
+    error = f"missing_fields:{','.join(missing_fields)}" if missing_fields else None
+    return JobDetails(
+        company_name=company_name,
+        job_title=job_title,
+        job_url=job_url,
+        error=error,
+        missing_fields=missing_fields,
+    )
+
+
+async def _get_job_card_metadata(index: int) -> dict:
+    """从岗位卡读取职位、公司和详情页链接。"""
+    js = f"""
+    JSON.stringify((() => {{
+      const cards = document.querySelectorAll('.job-card-box');
+      const card = cards[{index - 1}];
+      if (!card) return {{}};
+      const text = (selector) => {{
+        const element = card.querySelector(selector);
+        return element ? (element.innerText || element.textContent || '').trim() : '';
+      }};
+      const link = card.querySelector('a[href*="/job_detail/"], a[href]');
+      return {{
+        company_name: text('.company-name, .company-text, [class*="company-name"], [class*="company-text"]'),
+        job_title: text('.job-name, .job-title, [class*="job-name"], [class*="job-title"]'),
+        job_url: link ? link.href : ''
+      }};
+    }})())
+    """
+    return await _safe_evaluate(js, timeout=5)
+
+
 def _strip_jd_noise(text: str) -> str:
     """剥掉 JD 文本**开头连续**的页面 UI 噪声行。
 
@@ -540,21 +607,58 @@ def _strip_jd_noise(text: str) -> str:
 
 
 async def get_job_description_by_index(index: int) -> str | None:
-    """点开第 N 个岗位卡（1-indexed），返回右侧 JD 详情面板的文本；失败返回 None。"""
-    log.info("[get_job_description_by_index] index=%d", index)
+    """兼容旧调用方：点开岗位卡并只返回 JD 文本。"""
+    details = await get_job_details_by_index(index)
+    return details.jd if details.jd else None
+
+
+async def get_job_details_by_index(index: int) -> JobDetails:
+    """点开岗位卡并返回 JD、公司、职位、完整 URL 和抓取错误信息。"""
+    log.info("[get_job_details_by_index] index=%d", index)
+    metadata = await _get_job_card_metadata(index)
+    current_url = str(getattr(_tab, "url", "") or "")
+    details = _normalize_job_card_metadata(metadata, current_url=current_url)
+
     # 全程走 tab.evaluate(JS)，CSS selector + 浏览器内 click 都在 JS 里做完。
     click_result = await _js_click_at_index(".job-card-box", index)
     log.info("  点击 .job-card-box[%d]: %s", index, click_result)
     if not click_result.get("ok"):
-        return None
+        error = click_result.get("error") or "job_card_click_failed"
+        return JobDetails(
+            company_name=details.company_name,
+            job_title=details.job_title,
+            job_url=details.job_url,
+            error=error,
+            missing_fields=details.missing_fields,
+        )
+
+    # 点击后详情页 URL 可能才会出现，只有确认是详情 URL 才作为兜底值。
+    current_url = str(getattr(_tab, "url", "") or "")
+    details = _normalize_job_card_metadata(metadata, current_url=current_url)
 
     jd = await _js_wait_text(".job-detail-body", min_len=50, timeout_s=10)
     if jd is None:
         log.info("  10s 内 .job-detail-body 没出现或文本太短")
-        return None
+        error = "job_description_unavailable"
+        if details.error:
+            error = f"{error};{details.error}"
+        return JobDetails(
+            company_name=details.company_name,
+            job_title=details.job_title,
+            job_url=details.job_url,
+            error=error,
+            missing_fields=details.missing_fields,
+        )
     jd = _strip_jd_noise(jd)
     log.info("  JD 长度 %d 字符", len(jd))
-    return jd
+    return JobDetails(
+        jd=jd,
+        company_name=details.company_name,
+        job_title=details.job_title,
+        job_url=details.job_url,
+        error=details.error,
+        missing_fields=details.missing_fields,
+    )
 
 
 async def get_loaded_job_count() -> int:

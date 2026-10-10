@@ -20,6 +20,10 @@ from boss_zhipin.website_oper.finding_jobs import (
     return_to_job_list,
     scroll_to_load_more_jobs,
     _strip_jd_noise,
+    JobDetails,
+    _normalize_job_card_metadata,
+    get_job_details_by_index,
+    get_job_description_by_index,
 )
 
 
@@ -45,6 +49,85 @@ def test_no_noise_unchanged():
 def test_empty_and_none():
     assert _strip_jd_noise("") == ""
     assert _strip_jd_noise(None) == ""
+
+
+def test_normalizes_job_card_metadata_and_marks_missing_fields():
+    result = _normalize_job_card_metadata(
+        {"company_name": " 示例公司 ", "job_title": " Python 后端 "}
+    )
+
+    assert result.company_name == "示例公司"
+    assert result.job_title == "Python 后端"
+    assert result.job_url == ""
+    assert result.missing_fields == ("job_url",)
+    assert result.error == "missing_fields:job_url"
+
+
+def test_normalizes_relative_metadata_url_from_detail_page():
+    result = _normalize_job_card_metadata(
+        {"company_name": "示例公司", "job_title": "后端", "job_url": ""},
+        current_url="https://www.zhipin.com/job_detail/abc123.html",
+    )
+
+    assert result.job_url == "https://www.zhipin.com/job_detail/abc123.html"
+    assert result.error is None
+
+
+def test_job_details_returns_structured_fields(monkeypatch):
+    async def scenario():
+        monkeypatch.setattr(
+            finding_jobs,
+            "_get_job_card_metadata",
+            lambda index: _async_value(
+                {
+                    "company_name": "示例公司",
+                    "job_title": "Python 后端",
+                    "job_url": "https://www.zhipin.com/job_detail/abc.html",
+                }
+            ),
+        )
+        monkeypatch.setattr(
+            finding_jobs,
+            "_js_click_at_index",
+            lambda selector, index: _async_value({"ok": True}),
+        )
+        monkeypatch.setattr(
+            finding_jobs,
+            "_js_wait_text",
+            lambda selector, min_len, timeout_s: _async_value(
+                "职位描述\n参与后端服务开发和维护，负责接口设计与性能优化。"
+            ),
+        )
+
+        result = await get_job_details_by_index(1)
+
+        assert isinstance(result, JobDetails)
+        assert result.jd.startswith("参与后端服务开发")
+        assert result.company_name == "示例公司"
+        assert result.job_title == "Python 后端"
+        assert result.job_url.endswith("/job_detail/abc.html")
+        assert result.error is None
+
+    asyncio.run(scenario())
+
+
+def test_legacy_job_description_function_keeps_string_return(monkeypatch):
+    async def scenario():
+        monkeypatch.setattr(
+            finding_jobs,
+            "get_job_details_by_index",
+            lambda index: _async_value(JobDetails(jd="完整 JD 文本")),
+        )
+        assert await get_job_description_by_index(1) == "完整 JD 文本"
+
+    asyncio.run(scenario())
+
+
+def _async_value(value):
+    async def resolve():
+        return value
+
+    return resolve()
 
 
 def test_env_flag_true_variants(monkeypatch):
