@@ -9,13 +9,11 @@ import { isLang } from "./lib/i18n";
 
 type Tab = "run" | "config" | "history";
 
-// 顶部标题 + tab 区域
-// 设计：editorial 风格 —— 大号衬线标题 + 字距夸张的小 caps tab
-// 当前 tab 用底部黑色粗线表示，而不是 pill 反色块
 export default function App() {
   const [tab, setTab] = useState<Tab>("run");
   const [helpMsg, setHelpMsg] = useState<string | null>(null);
   const running = useRunStore((s) => s.running);
+  const currentIndex = useRunStore((s) => s.currentIndex);
   const setLang = useRunStore((s) => s.setLang);
   const t = useT();
 
@@ -50,68 +48,62 @@ export default function App() {
       .catch(() => {});
   }, [setLang]);
 
+  const pageTitle = t(`tab.${tab}`);
+  const statusText = running
+    ? currentIndex === null
+      ? t("run.statusStarting")
+      : t("run.statusRunningJob", { index: currentIndex })
+    : t("run.statusIdle");
+
   return (
-    <div className="min-h-screen flex flex-col">
-      <UpdateBanner />
-      <header className="border-b-4 border-[var(--ink)] bg-[var(--paper)]">
-        <div className="max-w-7xl mx-auto px-8 pt-8 pb-2 flex items-baseline gap-10">
-          {/* 主标题：oversized serif italic，作为视觉锚点 */}
-          <h1 className="font-serif italic text-3xl md:text-4xl leading-none tracking-tight">
-            Boss<span className="not-italic font-normal">·</span>Zhipin
-            <span className="block text-[10px] not-italic font-mono uppercase tracking-widest text-[var(--muted-fg)] mt-1">
-              Auto Greeting · Job Helper
-            </span>
-          </h1>
-
-          {/* tab 群：uppercase mono，当前项底部 4px 黑线 */}
-          <nav className="flex gap-8 self-end pb-1">
-            <TabButton current={tab} value="run" onClick={setTab}>
-              <span className="inline-flex items-center gap-2">
-                {t("tab.run")}
-                {running && (
-                  // 运行中标记：闪烁的黑色实心方块（不是绿色圆点）
-                  <span className="inline-block w-1.5 h-1.5 bg-[var(--ink)] animate-pulse" />
-                )}
-              </span>
-            </TabButton>
-            <TabButton current={tab} value="config" onClick={setTab}>
-              {t("tab.config")}
-            </TabButton>
-            <TabButton current={tab} value="history" onClick={setTab}>
-              {t("tab.history")}
-            </TabButton>
-          </nav>
-
-          {/* 右侧：常驻「问 AI」入口 + Chrome 提示语（复制成功时提示语临时换成反馈） */}
-          <div className="ml-auto self-end pb-1 flex flex-col items-end gap-1.5 max-w-[260px]">
-            <button
-              onClick={askAi}
-              className="text-[11px] font-mono uppercase tracking-widest border-2 border-[var(--ink)] px-2 py-1 hover:bg-[var(--ink)] hover:text-[var(--paper)] transition-colors duration-100"
-            >
-              {t("header.askAi")}
-            </button>
-            {helpMsg ? (
-              <span className="text-[10px] font-mono text-right text-[var(--ink)] leading-relaxed">
-                {helpMsg}
-              </span>
-            ) : (
-              <span className="text-[10px] font-mono uppercase tracking-widest text-right text-[var(--muted-fg)] leading-relaxed">
-                {t("header.warn1")}
-                <br />
-                {t("header.warn2")}
-              </span>
-            )}
-          </div>
+    <div className="app-shell">
+      <aside className="app-sidebar" aria-label="Application navigation">
+        <div className="brand-lockup">
+          <div className="brand-mark">B<span>·</span>Z</div>
+          <div className="brand-name">BossZhipin</div>
+          <div className="brand-caption">Job helper</div>
         </div>
-      </header>
+        <nav className="side-nav">
+          <TabButton current={tab} value="run" onClick={setTab}>
+            <span className="nav-index">01</span>{t("tab.run")}
+          </TabButton>
+          <TabButton current={tab} value="config" onClick={setTab}>
+            <span className="nav-index">02</span>{t("tab.config")}
+          </TabButton>
+          <TabButton current={tab} value="history" onClick={setTab}>
+            <span className="nav-index">03</span>{t("tab.history")}
+          </TabButton>
+        </nav>
+        <div className="sidebar-foot">AUTO GREETING<br />JOB HELPER</div>
+      </aside>
 
-      <main className="flex-1 overflow-auto">
-        <div className="max-w-7xl mx-auto px-8 py-10">
+      <section className="app-main">
+        <UpdateBanner />
+        <header className="topbar">
+          <div>
+            <span className="eyebrow">Workspace / {tab}</span>
+            <h1>{pageTitle}</h1>
+          </div>
+          <div className="topbar-actions">
+            <div className={`run-status ${running ? "is-running" : ""}`} aria-live="polite">
+              <span className="status-dot" aria-hidden="true" />
+              <span>{statusText}</span>
+            </div>
+            <button onClick={askAi} className="ask-ai-btn">
+              <span aria-hidden="true">↗</span> {t("header.askAi")}
+            </button>
+            {helpMsg ? <span className="help-message" role="status">{helpMsg}</span> : null}
+          </div>
+        </header>
+
+        <main className="content-scroll">
+          <div className="content-inner">
           {tab === "run" && <RunPage />}
           {tab === "config" && <ConfigPage />}
           {tab === "history" && <HistoryPage />}
-        </div>
-      </main>
+          </div>
+        </main>
+      </section>
     </div>
   );
 }
@@ -131,13 +123,8 @@ function TabButton({
   return (
     <button
       onClick={() => onClick(value)}
-      className={[
-        "pb-2 text-[11px] font-mono uppercase tracking-widest transition-colors duration-100",
-        // active：底部 4px 黑线 + 加粗黑字；inactive：弱灰 + hover 时浮现细底线
-        active
-          ? "text-[var(--ink)] border-b-[3px] border-[var(--ink)] font-semibold"
-          : "text-[var(--muted-fg)] border-b-[3px] border-transparent hover:text-[var(--ink)] hover:border-[var(--border-light)]",
-      ].join(" ")}
+      className={`side-nav-item ${active ? "is-active" : ""}`}
+      aria-current={active ? "page" : undefined}
     >
       {children}
     </button>
