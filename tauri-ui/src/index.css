@@ -28,7 +28,7 @@
 }
 
 @layer components {
-  .app-shell { min-height: 100vh; display: flex; background: var(--graphite-950); }
+  .app-shell { box-sizing: border-box; min-height: 100vh; display: flex; background: var(--graphite-950); }
   .app-sidebar { width: 232px; flex: 0 0 232px; display: flex; flex-direction: column; padding: 30px 20px 24px; border-right: 1px solid var(--border-light); background: var(--graphite-900); }
   .brand-lockup { padding: 0 12px 42px; }
   .brand-mark { color: var(--accent); font: 700 26px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: -0.09em; }
