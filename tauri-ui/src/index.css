@@ -16,6 +16,7 @@
 }
 
 @layer base {
+  *, *::before, *::after { box-sizing: border-box; }
   html, body, #root { min-height: 100%; }
   html { background: var(--graphite-950); }
   body { margin: 0; background: var(--graphite-950); color: var(--ink); @apply font-sans antialiased; font-feature-settings: "kern", "liga", "calt"; }
@@ -42,7 +43,7 @@
   .nav-index { width: 18px; color: var(--muted-fg); font-size: 9px; }
   .side-nav-item.is-active .nav-index { color: #536d22; }
   .sidebar-foot { margin-top: auto; padding: 16px 12px 0; border-top: 1px solid var(--border-light); line-height: 1.8; }
-  .app-main { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+  .app-main { min-width: 0; min-height: 0; flex: 1; display: flex; flex-direction: column; }
   .topbar { min-height: 94px; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 22px clamp(24px, 4vw, 64px); border-bottom: 1px solid var(--border-light); background: var(--graphite-900); }
   .topbar h1 { margin: 7px 0 0; color: var(--ink); font-size: clamp(20px, 2vw, 28px); font-weight: 650; }
   .topbar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 16px; min-width: 0; }
@@ -53,7 +54,7 @@
   .ask-ai-btn { display: inline-flex; align-items: center; gap: 7px; padding: 9px 12px; border: 1px solid var(--border-light); background: transparent; color: var(--ink); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .05em; text-transform: uppercase; transition: border-color .15s, color .15s, background .15s; }
   .ask-ai-btn:hover { border-color: var(--accent); color: var(--graphite-950); background: var(--accent); }
   .help-message { max-width: 260px; color: var(--accent); font: 10px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
-  .content-scroll { flex: 1; overflow: auto; }
+  .content-scroll { min-height: 0; flex: 1; overflow: auto; }
   .content-inner { width: min(1180px, 100%); margin: 0 auto; padding: clamp(24px, 4vw, 56px); }
   .btn, .btn-outline, .btn-ghost { @apply inline-flex items-center justify-center gap-2 font-mono uppercase; border-radius: 3px; transition: background .15s, color .15s, border-color .15s, opacity .15s; }
   .btn { padding: 11px 18px; border: 1px solid var(--accent); background: var(--accent); color: var(--graphite-950); font-size: 11px; letter-spacing: .08em; }
