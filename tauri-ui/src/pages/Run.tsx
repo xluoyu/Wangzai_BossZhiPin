@@ -21,7 +21,6 @@ export default function RunPage() {
   const [llmError, setLlmError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [resume, setResume] = useState<ResumeInfo | null>(null);
-  const [resumeBusy, setResumeBusy] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
@@ -35,10 +34,12 @@ export default function RunPage() {
   const dryRun = useRunStore((s) => s.formDryRun);
   const setFormState = useRunStore((s) => s.setFormState);
   const running = useRunStore((s) => s.running);
+  const resumeBusy = useRunStore((s) => s.resumeUploading);
   const events = useRunStore((s) => s.events);
   const logs = useRunStore((s) => s.logs);
   const currentIndex = useRunStore((s) => s.currentIndex);
   const setRunning = useRunStore((s) => s.setRunning);
+  const setResumeBusy = useRunStore((s) => s.setResumeUploading);
   const pushEvent = useRunStore((s) => s.pushEvent);
   const pushLog = useRunStore((s) => s.pushLog);
   const clear = useRunStore((s) => s.clear);
@@ -46,6 +47,7 @@ export default function RunPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const eventScrollRef = useRef<HTMLDivElement>(null);
   const logScrollRef = useRef<HTMLPreElement>(null);
+  const resumeRequestRef = useRef(0);
   const copyMsgTimerRef = useRef<number | null>(null);
   const logDirCopyTimerRef = useRef<number | null>(null);
 
@@ -54,7 +56,17 @@ export default function RunPage() {
     if (logDirCopyTimerRef.current !== null) window.clearTimeout(logDirCopyTimerRef.current);
   }, []);
 
+  useEffect(() => useRunStore.subscribe((state, previous) => {
+    if (state.running && !previous.running) {
+      if (state.resumeUploading || previous.resumeUploading) resumeRequestRef.current += 1;
+      setResumeBusy(false);
+      setDragging(false);
+      setConfirmLiveRun(false);
+    }
+  }), []);
+
   useEffect(() => {
+    const request = resumeRequestRef.current;
     Promise.all([
       ipc.getLlmConfig(),
       ipc.getEnvFields(),
@@ -68,7 +80,9 @@ export default function RunPage() {
       if (name && !current.formUsrName) updates.formUsrName = name;
       if (savedLabel && !current.formLabel) updates.formLabel = savedLabel;
       if (Object.keys(updates).length) setFormState(updates);
-      setResume(currentResume.resume);
+      if (request === resumeRequestRef.current) {
+        setResume(currentResume.resume);
+      }
     }).catch((error) => {
       setLlmError(String(error));
     });
@@ -84,18 +98,19 @@ export default function RunPage() {
         return;
       }
       setDragging(false);
-      if (payload.type !== "drop" || useRunStore.getState().running) return;
+      if (payload.type !== "drop" || useRunStore.getState().running || useRunStore.getState().resumeUploading) return;
       const path = payload.paths.find((item) => item.toLowerCase().endsWith(".pdf"));
       if (!path) {
         setResumeError(t("run.onlyPdf"));
         return;
       }
-      setResumeBusy(true);
+      const request = beginResumeUpload();
+      if (request === null) return;
       setResumeError(null);
       ipc.setResume(path)
-        .then((info) => setResume(info))
-        .catch((error) => setResumeError(String(error)))
-        .finally(() => setResumeBusy(false));
+        .then((info) => { if (isCurrentResumeRequest(request)) setResume(info); })
+        .catch((error) => { if (isCurrentResumeRequest(request)) setResumeError(String(error)); })
+        .finally(() => finishResumeUpload(request));
     }).then((cleanup) => {
       if (cancelled) cleanup();
       else unlisten = cleanup;
@@ -134,7 +149,23 @@ export default function RunPage() {
     return null;
   }
 
+  function beginResumeUpload(): number | null {
+    if (useRunStore.getState().running || useRunStore.getState().resumeUploading) return null;
+    setResumeBusy(true);
+    return ++resumeRequestRef.current;
+  }
+
+  function isCurrentResumeRequest(request: number): boolean {
+    return request === resumeRequestRef.current && !useRunStore.getState().running;
+  }
+
+  function finishResumeUpload(request: number) {
+    if (request !== resumeRequestRef.current) return;
+    setResumeBusy(false);
+  }
+
   async function startRun() {
+    if (useRunStore.getState().running || busy || useRunStore.getState().resumeUploading) return;
     const error = validateStart();
     if (error) {
       setStartError(error);
@@ -162,6 +193,7 @@ export default function RunPage() {
   }
 
   function requestStart() {
+    if (useRunStore.getState().running || busy || useRunStore.getState().resumeUploading) return;
     const error = validateStart();
     if (error) {
       setStartError(error);
@@ -242,7 +274,7 @@ export default function RunPage() {
   }
 
   async function onFilePicked(event: ChangeEvent<HTMLInputElement>) {
-    if (useRunStore.getState().running) {
+    if (useRunStore.getState().running || useRunStore.getState().resumeUploading) {
       event.target.value = "";
       return;
     }
@@ -253,19 +285,23 @@ export default function RunPage() {
       setResumeError(t("run.onlyPdf"));
       return;
     }
-    setResumeBusy(true);
+    const request = beginResumeUpload();
+    if (request === null) return;
     setResumeError(null);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
+      if (!isCurrentResumeRequest(request)) return;
       let binary = "";
       for (let offset = 0; offset < bytes.length; offset += 0x8000) {
         binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
       }
-      setResume(await ipc.setResumeBytes(file.name, btoa(binary)));
+      if (!isCurrentResumeRequest(request)) return;
+      const info = await ipc.setResumeBytes(file.name, btoa(binary));
+      if (isCurrentResumeRequest(request)) setResume(info);
     } catch (error) {
-      setResumeError(String(error));
+      if (isCurrentResumeRequest(request)) setResumeError(String(error));
     } finally {
-      setResumeBusy(false);
+      finishResumeUpload(request);
     }
   }
 
@@ -294,30 +330,30 @@ export default function RunPage() {
       <section className="panel space-y-5">
         <SectionHeading eyebrow="01" title={t("run.workbenchConfig")} detail={t("run.configDetail")} />
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-          <Field label={t("run.fieldName")} hint={t("run.hintRequired")}>
-            <input type="text" value={usrName} onChange={(event) => setFormState({ formUsrName: event.target.value })} disabled={running} className="field-input" placeholder={t("run.fieldNamePlaceholder")} />
+          <Field label={t("run.fieldName")} hint={t("run.hintRequired")} htmlFor="run-name">
+            <input id="run-name" type="text" value={usrName} onChange={(event) => setFormState({ formUsrName: event.target.value })} disabled={running} className="field-input" placeholder={t("run.fieldNamePlaceholder")} />
           </Field>
-          <Field label={t("run.fieldLabel")} hint={t("run.hintOptional")}>
-            <input type="text" value={label} onChange={(event) => setFormState({ formLabel: event.target.value })} disabled={running} className="field-input" placeholder={t("run.fieldLabelPlaceholder")} />
+          <Field label={t("run.fieldLabel")} hint={t("run.hintOptional")} htmlFor="run-label">
+            <input id="run-label" type="text" value={label} onChange={(event) => setFormState({ formLabel: event.target.value })} disabled={running} className="field-input" placeholder={t("run.fieldLabelPlaceholder")} />
           </Field>
           <Field label={t("run.fieldEndpoint")} hint={t("run.hintSetInConfig")}>
             <div className="flex min-h-[42px] flex-wrap items-center gap-2 border border-[var(--border-light)] bg-[var(--graphite-800)] px-3 py-2 text-xs font-mono">
               {llmError ? <span className="text-[var(--accent)]">{t("run.llmReadFailed", { err: llmError })}</span> : !llmCfg || !llmCfg.hasKey ? <><span className="badge-outline">{t("run.noKey")}</span><span>{t("run.goConfigForKey")}</span></> : <><span className="badge-invert">{llmCfg.model || t("run.noModelTag")}</span><span className="break-all text-[var(--muted-fg)]">{llmCfg.baseUrl || t("run.defaultEndpoint")}</span></>}
             </div>
           </Field>
-          <Field label={t("run.fieldDryRun")} hint={dryRun ? t("run.dryRunOn") : t("run.dryRunOff")}>
-            <label className={`flex min-h-[42px] items-center gap-3 border border-[var(--border-light)] bg-[var(--graphite-800)] px-3 text-sm ${running ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}>
-              <input type="checkbox" checked={dryRun} onChange={(event) => setFormState({ formDryRun: event.target.checked })} disabled={running} className="h-4 w-4 accent-[var(--accent)]" />
-              <span className="font-mono text-xs">{t("run.dryRunDesc")}</span>
-            </label>
+          <Field label={t("run.fieldDryRun")} hint={dryRun ? t("run.dryRunOn") : t("run.dryRunOff")} htmlFor="run-dry-run">
+            <div className={`flex min-h-[42px] items-center gap-3 border border-[var(--border-light)] bg-[var(--graphite-800)] px-3 text-sm ${running ? "opacity-50" : ""}`}>
+              <input id="run-dry-run" type="checkbox" checked={dryRun} onChange={(event) => setFormState({ formDryRun: event.target.checked })} disabled={running} className="h-4 w-4 accent-[var(--accent)]" />
+              <label htmlFor="run-dry-run" className={`font-mono text-xs ${running ? "cursor-not-allowed" : "cursor-pointer"}`}>{t("run.dryRunDesc")}</label>
+            </div>
           </Field>
         </div>
 
         <div>
           <div className="mb-2 flex items-baseline justify-between gap-3"><span className="field-label">{t("run.fieldResume")}</span><span className="mono-tag">{t("run.resumeHint")}</span></div>
-          <input ref={fileInputRef} type="file" accept="application/pdf,.pdf" className="hidden" onChange={onFilePicked} />
-          <div role="button" tabIndex={running ? -1 : 0} onClick={() => { if (!running) fileInputRef.current?.click(); }} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (!running && (event.key === "Enter" || event.key === " ")) fileInputRef.current?.click(); }} className={`border border-dashed p-4 transition-colors ${dragging ? "border-[var(--accent)] bg-[var(--graphite-700)]" : "border-[var(--border-light)]"} ${running ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:border-[var(--accent)]"}`}>
-            {resumeBusy ? <p className="font-mono text-sm">{t("run.uploading")}</p> : resume ? <div className="flex flex-wrap items-center justify-between gap-3"><span className="font-mono text-sm">{t("run.currentResume", { filename: resume.filename })}</span><button type="button" className="btn-outline text-xs" disabled={running} onClick={(event) => { event.stopPropagation(); fileInputRef.current?.click(); }}>{t("run.replaceResume")}</button></div> : <div className="flex flex-wrap items-center justify-between gap-3"><span className="font-mono text-sm text-[var(--muted-fg)]">{t("run.dropPrompt")}</span><button type="button" className="btn-outline text-xs" disabled={running} onClick={(event) => { event.stopPropagation(); fileInputRef.current?.click(); }}>{t("btn.pickFile")}</button></div>}
+          <input ref={fileInputRef} type="file" accept="application/pdf,.pdf" aria-label={t("run.fieldResume")} className="hidden" onChange={onFilePicked} disabled={running || resumeBusy} />
+          <div className={`border border-dashed p-4 transition-colors ${dragging ? "border-[var(--accent)] bg-[var(--graphite-700)]" : "border-[var(--border-light)]"} ${running ? "opacity-50" : ""}`}>
+            {resumeBusy ? <p className="font-mono text-sm" role="status">{t("run.uploading")}</p> : resume ? <div className="flex flex-wrap items-center justify-between gap-3"><span className="font-mono text-sm">{t("run.currentResume", { filename: resume.filename })}</span><button type="button" className="btn-outline text-xs" disabled={running || resumeBusy} onClick={() => fileInputRef.current?.click()}>{t("run.replaceResume")}</button></div> : <div className="flex flex-wrap items-center justify-between gap-3"><span className="font-mono text-sm text-[var(--muted-fg)]">{t("run.dropPrompt")}</span><button type="button" className="btn-outline text-xs" disabled={running || resumeBusy} onClick={() => fileInputRef.current?.click()}>{t("btn.pickFile")}</button></div>}
             {resumeError && <p className="mt-3 text-xs text-[var(--accent)]">{resumeError}</p>}
           </div>
         </div>
@@ -326,11 +362,11 @@ export default function RunPage() {
       <section className="panel space-y-4">
         <SectionHeading eyebrow="02" title={t("run.workbenchControl")} detail={t("run.controlDetail")} />
         <div className="flex flex-wrap items-center gap-3">
-          <button type="button" onClick={requestStart} disabled={running || busy} className="btn">{t("btn.start")} <span aria-hidden="true">→</span></button>
+          <button type="button" onClick={requestStart} disabled={running || busy || resumeBusy} className="btn">{t("btn.start")} <span aria-hidden="true">→</span></button>
           <button type="button" onClick={stopRun} disabled={!running || busy} className="btn-outline">{t("run.stopTask")}</button>
           <button type="button" onClick={resetBrowser} disabled={running || busy} className="btn-ghost">{t("btn.resetChrome")}</button>
         </div>
-        {confirmLiveRun && <div className="border border-[var(--accent)] bg-[var(--graphite-800)] p-4" role="alertdialog" aria-live="assertive"><p className="font-mono text-sm">{t("run.confirmLiveTitle")}</p><p className="mt-1 text-sm text-[var(--muted-fg)]">{t("run.confirmLiveDesc")}</p><div className="mt-4 flex flex-wrap gap-3"><button type="button" className="btn" onClick={() => void startRun()} disabled={busy}>{t("run.confirmLive")}</button><button type="button" className="btn-outline" onClick={() => setConfirmLiveRun(false)} disabled={busy}>{t("run.confirmCancel")}</button></div></div>}
+        {confirmLiveRun && <div className="border border-[var(--accent)] bg-[var(--graphite-800)] p-4" role="alertdialog" aria-live="assertive"><p className="font-mono text-sm">{t("run.confirmLiveTitle")}</p><p className="mt-1 text-sm text-[var(--muted-fg)]">{t("run.confirmLiveDesc")}</p><p className="mt-1 break-words text-sm text-[var(--muted-fg)]">{t("run.confirmLiveLabel", { label: label.trim() || t("run.confirmLiveFeed") })}</p><div className="mt-4 flex flex-wrap gap-3"><button type="button" className="btn" onClick={() => void startRun()} disabled={running || busy || resumeBusy}>{t("run.confirmLive")}</button><button type="button" className="btn-outline" onClick={() => setConfirmLiveRun(false)} disabled={busy}>{t("run.confirmCancel")}</button></div></div>}
         {startError && <div className="border border-[var(--accent)] p-3 font-mono text-sm text-[var(--accent)]" role="alert">{startError}</div>}
         {hasError && <div className="border border-[var(--border-light)] bg-[var(--graphite-800)] p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-mono text-sm text-[var(--accent)]">{t("run.errorTitle")}</p><p className="mt-1 text-xs text-[var(--muted-fg)]">{lastError ? eventPayloadText(lastError) : t("run.errorDesc")}</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={copyLogs} className="btn-outline text-xs">{t("btn.copyLogs")}</button><button type="button" onClick={copyAiHelp} className="btn text-xs">{t("askai.btn")}</button></div></div>{logDir && <p className="mt-3 break-all text-xs font-mono text-[var(--muted-fg)]">{t("run.logDir", { dir: logDir.dir })} <button type="button" className="ml-2 underline underline-offset-2" onClick={copyLogDir}>{t("btn.copyPath")}</button>{logDirCopyState ? ` · ${logDirCopyState}` : ""}</p>}{copyMsg && <p className="mt-3 text-xs font-mono text-[var(--accent)]" role="status">{copyMsg}</p>}</div>}
       </section>
@@ -352,8 +388,8 @@ function SectionHeading({ eyebrow, title, detail }: { eyebrow: string; title: st
   return <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-[var(--border-light)] pb-3"><div className="flex items-baseline gap-3"><span className="mono-tag text-[var(--accent)]">{eyebrow}</span><h3 className="text-base font-semibold">{title}</h3></div><span className="text-xs text-[var(--muted-fg)]">{detail}</span></div>;
 }
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
-  return <div><div className="flex items-baseline justify-between gap-3"><span className="field-label">{label}</span>{hint && <span className="text-[10px] font-mono text-[var(--muted-fg)]">{hint}</span>}</div>{children}</div>;
+function Field({ label, hint, htmlFor, children }: { label: string; hint?: string; htmlFor?: string; children: ReactNode }) {
+  return <div><div className="flex items-baseline justify-between gap-3">{htmlFor ? <label htmlFor={htmlFor} className="field-label">{label}</label> : <span className="field-label">{label}</span>}{hint && <span className="text-[10px] font-mono text-[var(--muted-fg)]">{hint}</span>}</div>{children}</div>;
 }
 
 function Metric({ label, value, emphasis }: { label: string; value: number; emphasis?: boolean }) {

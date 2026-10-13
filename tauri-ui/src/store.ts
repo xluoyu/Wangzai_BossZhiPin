@@ -10,6 +10,7 @@ const MAX_LOGS = 1000;
 
 type RunState = {
   running: boolean;
+  resumeUploading: boolean;
   events: ProgressEvent[];
   logs: string[];
   currentIndex: number | null;  // 当前 job_index（从 job_found 提取）
@@ -23,6 +24,7 @@ type RunState = {
   formDryRun: boolean;
 
   setRunning: (running: boolean) => void;
+  setResumeUploading: (uploading: boolean) => void;
   pushEvent: (ev: ProgressEvent) => void;
   pushLog: (line: string) => void;
   clear: () => void;
@@ -33,6 +35,7 @@ type RunState = {
 
 export const useRunStore = create<RunState>((set) => ({
   running: false,
+  resumeUploading: false,
   events: [],
   logs: [],
   currentIndex: null,
@@ -43,7 +46,8 @@ export const useRunStore = create<RunState>((set) => ({
   formLabel: "",
   formDryRun: true,
 
-  setRunning: (running) => set({ running }),
+  setRunning: (running) => set({ running, ...(running ? { resumeUploading: false } : {}) }),
+  setResumeUploading: (resumeUploading) => set({ resumeUploading }),
   pushEvent: (ev) =>
     set((s) => {
       const events = [...s.events, ev].slice(-MAX_EVENTS);
