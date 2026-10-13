@@ -36,8 +36,14 @@ export default function App() {
   // 前端展示的语言一致——否则非中文用户首次见到的后端串会是中文。读/写失败都
   // 静默：大不了下次启动再探测一次，不打断使用。
   useEffect(() => {
+    let cancelled = false;
+    let languageChanged = false;
+    const unsubscribe = useRunStore.subscribe((state, previous) => {
+      if (state.lang !== previous.lang) languageChanged = true;
+    });
     ipc.getLanguage()
       .then(({ lang }) => {
+        if (cancelled || languageChanged) return;
         if (isLang(lang)) {
           setLang(lang);
         } else {
@@ -46,6 +52,10 @@ export default function App() {
         }
       })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [setLang]);
 
   const pageTitle = t(`tab.${tab}`);
