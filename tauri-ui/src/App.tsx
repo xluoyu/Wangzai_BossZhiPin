@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import RunPage from "./pages/Run";
 import ConfigPage from "./pages/Config";
 import HistoryPage from "./pages/History";
@@ -14,6 +14,7 @@ export default function App() {
   const [helpMsg, setHelpMsg] = useState<string | null>(null);
   const [runStateLoad, setRunStateLoad] = useState<"loading" | "ready" | "error">("loading");
   const [runStateRetry, setRunStateRetry] = useState(0);
+  const hydratedBackendRunning = useRef(false);
   const running = useRunStore((s) => s.running);
   const currentIndex = useRunStore((s) => s.currentIndex);
   const events = useRunStore((s) => s.events);
@@ -73,7 +74,10 @@ export default function App() {
     ipc.isRunning()
       .then(({ running: backendRunning }) => {
         if (cancelled) return;
-        if (!runStateChanged) setRunning(backendRunning);
+        if (!runStateChanged) {
+          hydratedBackendRunning.current = backendRunning;
+          setRunning(backendRunning);
+        }
         setRunStateLoad("ready");
       })
       .catch(() => {
@@ -84,6 +88,57 @@ export default function App() {
       unsubscribe();
     };
   }, [runStateRetry, setRunning]);
+
+  useEffect(() => {
+    if (runStateLoad !== "ready") return;
+
+    let cancelled = false;
+    let timer: number | undefined;
+    let stateVersion = 0;
+    let backendConfirmed = hydratedBackendRunning.current;
+    let optimisticSince = useRunStore.getState().running && !backendConfirmed ? Date.now() : null;
+    const unsubscribe = useRunStore.subscribe((state, previous) => {
+      if (state.running !== previous.running || state.events !== previous.events) stateVersion += 1;
+      if (state.running && !previous.running) {
+        backendConfirmed = false;
+        optimisticSince = Date.now();
+      } else if (!state.running && previous.running) {
+        backendConfirmed = false;
+        optimisticSince = null;
+      }
+    });
+
+    // A reloaded webview loses the old progress channel, so reconcile with the backend.
+    async function pollRunning() {
+      const requestVersion = stateVersion;
+      try {
+        const { running: backendRunning } = await ipc.isRunning();
+        if (cancelled || requestVersion !== stateVersion) return;
+        const localRunning = useRunStore.getState().running;
+        if (backendRunning) {
+          if (!localRunning) setRunning(true);
+          backendConfirmed = true;
+          optimisticSince = null;
+        } else if (localRunning && (
+          // startRun marks the UI running before the backend has accepted the command.
+          backendConfirmed || optimisticSince === null || Date.now() - optimisticSince >= 10_000
+        )) {
+          setRunning(false);
+        }
+      } catch {
+        // Keep the last known state until the backend can answer again.
+      } finally {
+        if (!cancelled) timer = window.setTimeout(pollRunning, 2_000);
+      }
+    }
+
+    timer = window.setTimeout(pollRunning, 2_000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      unsubscribe();
+    };
+  }, [runStateLoad, setRunning]);
 
   const pageTitle = t(`tab.${tab}`);
   const lastTerminal = [...events].reverse().find((event) => event.kind === "loop_ended" || event.kind === "error");
