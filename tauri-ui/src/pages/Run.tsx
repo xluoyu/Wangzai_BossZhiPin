@@ -46,6 +46,13 @@ export default function RunPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const eventScrollRef = useRef<HTMLDivElement>(null);
   const logScrollRef = useRef<HTMLPreElement>(null);
+  const copyMsgTimerRef = useRef<number | null>(null);
+  const logDirCopyTimerRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (copyMsgTimerRef.current !== null) window.clearTimeout(copyMsgTimerRef.current);
+    if (logDirCopyTimerRef.current !== null) window.clearTimeout(logDirCopyTimerRef.current);
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -218,15 +225,27 @@ export default function RunPage() {
     } catch {
       setLogDirCopyState(t("run.copyPathFail"));
     }
-    window.setTimeout(() => setLogDirCopyState(null), 4000);
+    if (logDirCopyTimerRef.current !== null) window.clearTimeout(logDirCopyTimerRef.current);
+    logDirCopyTimerRef.current = window.setTimeout(() => {
+      setLogDirCopyState(null);
+      logDirCopyTimerRef.current = null;
+    }, 4000);
   }
 
   function showCopyMessage(message: string) {
+    if (copyMsgTimerRef.current !== null) window.clearTimeout(copyMsgTimerRef.current);
     setCopyMsg(message);
-    window.setTimeout(() => setCopyMsg(null), 6000);
+    copyMsgTimerRef.current = window.setTimeout(() => {
+      setCopyMsg(null);
+      copyMsgTimerRef.current = null;
+    }, 6000);
   }
 
   async function onFilePicked(event: ChangeEvent<HTMLInputElement>) {
+    if (useRunStore.getState().running) {
+      event.target.value = "";
+      return;
+    }
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
@@ -297,8 +316,8 @@ export default function RunPage() {
         <div>
           <div className="mb-2 flex items-baseline justify-between gap-3"><span className="field-label">{t("run.fieldResume")}</span><span className="mono-tag">{t("run.resumeHint")}</span></div>
           <input ref={fileInputRef} type="file" accept="application/pdf,.pdf" className="hidden" onChange={onFilePicked} />
-          <div role="button" tabIndex={running ? -1 : 0} onClick={() => { if (!running) fileInputRef.current?.click(); }} onKeyDown={(event) => { if (!running && (event.key === "Enter" || event.key === " ")) fileInputRef.current?.click(); }} className={`border border-dashed p-4 transition-colors ${dragging ? "border-[var(--accent)] bg-[var(--graphite-700)]" : "border-[var(--border-light)]"} ${running ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:border-[var(--accent)]"}`}>
-            {resumeBusy ? <p className="font-mono text-sm">{t("run.uploading")}</p> : resume ? <div className="flex flex-wrap items-center justify-between gap-3"><span className="font-mono text-sm">{t("run.currentResume", { filename: resume.filename })}</span><button type="button" className="btn-outline text-xs" disabled={running} onClick={(event) => { event.stopPropagation(); fileInputRef.current?.click(); }}>{t("run.replaceResume")}</button></div> : <div className="flex flex-wrap items-center justify-between gap-3"><span className="font-mono text-sm text-[var(--muted-fg)]">{t("run.dropPrompt")}</span><button type="button" className="btn-outline text-xs" onClick={(event) => { event.stopPropagation(); fileInputRef.current?.click(); }}>{t("btn.pickFile")}</button></div>}
+          <div role="button" tabIndex={running ? -1 : 0} onClick={() => { if (!running) fileInputRef.current?.click(); }} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (!running && (event.key === "Enter" || event.key === " ")) fileInputRef.current?.click(); }} className={`border border-dashed p-4 transition-colors ${dragging ? "border-[var(--accent)] bg-[var(--graphite-700)]" : "border-[var(--border-light)]"} ${running ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:border-[var(--accent)]"}`}>
+            {resumeBusy ? <p className="font-mono text-sm">{t("run.uploading")}</p> : resume ? <div className="flex flex-wrap items-center justify-between gap-3"><span className="font-mono text-sm">{t("run.currentResume", { filename: resume.filename })}</span><button type="button" className="btn-outline text-xs" disabled={running} onClick={(event) => { event.stopPropagation(); fileInputRef.current?.click(); }}>{t("run.replaceResume")}</button></div> : <div className="flex flex-wrap items-center justify-between gap-3"><span className="font-mono text-sm text-[var(--muted-fg)]">{t("run.dropPrompt")}</span><button type="button" className="btn-outline text-xs" disabled={running} onClick={(event) => { event.stopPropagation(); fileInputRef.current?.click(); }}>{t("btn.pickFile")}</button></div>}
             {resumeError && <p className="mt-3 text-xs text-[var(--accent)]">{resumeError}</p>}
           </div>
         </div>
