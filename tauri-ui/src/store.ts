@@ -52,7 +52,7 @@ export const useRunStore = create<RunState>((set) => ({
         currentIndex = ev.payload.index;
       }
       let running = s.running;
-      if (ev.kind === "loop_ended") {
+      if (ev.kind === "loop_ended" || ev.kind === "error") {
         running = false;
       }
       return { events, currentIndex, running };
