@@ -96,15 +96,12 @@ export default function App() {
     let timer: number | undefined;
     let stateVersion = 0;
     let backendConfirmed = hydratedBackendRunning.current;
-    let optimisticSince = useRunStore.getState().running && !backendConfirmed ? Date.now() : null;
     const unsubscribe = useRunStore.subscribe((state, previous) => {
       if (state.running !== previous.running || state.events !== previous.events) stateVersion += 1;
       if (state.running && !previous.running) {
         backendConfirmed = false;
-        optimisticSince = Date.now();
       } else if (!state.running && previous.running) {
         backendConfirmed = false;
-        optimisticSince = null;
       }
     });
 
@@ -118,11 +115,8 @@ export default function App() {
         if (backendRunning) {
           if (!localRunning) setRunning(true);
           backendConfirmed = true;
-          optimisticSince = null;
-        } else if (localRunning && (
-          // startRun marks the UI running before the backend has accepted the command.
-          backendConfirmed || optimisticSince === null || Date.now() - optimisticSince >= 10_000
-        )) {
+        } else if (localRunning && backendConfirmed) {
+          // Leave unconfirmed optimistic starts to startRun and its event channel.
           setRunning(false);
         }
       } catch {
