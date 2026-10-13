@@ -12,8 +12,12 @@ type Tab = "run" | "config" | "history";
 export default function App() {
   const [tab, setTab] = useState<Tab>("run");
   const [helpMsg, setHelpMsg] = useState<string | null>(null);
+  const [runStateLoad, setRunStateLoad] = useState<"loading" | "ready" | "error">("loading");
+  const [runStateRetry, setRunStateRetry] = useState(0);
   const running = useRunStore((s) => s.running);
   const currentIndex = useRunStore((s) => s.currentIndex);
+  const events = useRunStore((s) => s.events);
+  const setRunning = useRunStore((s) => s.setRunning);
   const setLang = useRunStore((s) => s.setLang);
   const t = useT();
 
@@ -58,12 +62,42 @@ export default function App() {
     };
   }, [setLang]);
 
+  useEffect(() => {
+    let cancelled = false;
+    let runStateChanged = false;
+    const unsubscribe = useRunStore.subscribe((state, previous) => {
+      if (state.running !== previous.running || state.events !== previous.events) {
+        runStateChanged = true;
+      }
+    });
+    ipc.isRunning()
+      .then(({ running: backendRunning }) => {
+        if (cancelled) return;
+        if (!runStateChanged) setRunning(backendRunning);
+        setRunStateLoad("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setRunStateLoad("error");
+      });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [runStateRetry, setRunning]);
+
   const pageTitle = t(`tab.${tab}`);
+  const lastTerminal = [...events].reverse().find((event) => event.kind === "loop_ended" || event.kind === "error");
   const statusText = running
     ? currentIndex === null
       ? t("run.statusStarting")
       : t("run.statusRunningJob", { index: currentIndex })
-    : t("run.statusIdle");
+    : lastTerminal?.kind === "error" || lastTerminal?.payload.reason === "error"
+      ? t("run.loopError")
+      : lastTerminal?.payload.reason === "cancelled"
+        ? t("run.loopCancelled")
+        : lastTerminal?.payload.reason === "completed"
+          ? t("run.loopCompleted")
+          : t("run.statusIdle");
 
   return (
     <div className="app-shell">
@@ -108,9 +142,19 @@ export default function App() {
 
         <main className="content-scroll">
           <div className="content-inner">
-          {tab === "run" && <RunPage />}
-          {tab === "config" && <ConfigPage />}
-          {tab === "history" && <HistoryPage />}
+            {tab === "run" && (
+              runStateLoad === "ready" ? <RunPage /> :
+              runStateLoad === "loading" ? <div role="status">{t("common.loading")}</div> :
+              <div role="alert">
+                {t("config.loadFailed")}
+                <button className="btn-outline ml-3" onClick={() => {
+                  setRunStateLoad("loading");
+                  setRunStateRetry((retry) => retry + 1);
+                }}>{t("config.retry")}</button>
+              </div>
+            )}
+            <div hidden={tab !== "config"}><ConfigPage /></div>
+            {tab === "history" && <HistoryPage />}
           </div>
         </main>
       </section>
