@@ -183,7 +183,7 @@ export default function ConfigPage() {
     }
     if (promptDirty) {
       try {
-        await ipc.setLetterPrompt(prompt.trim());
+        await ipc.setLetterPrompt(prompt.trim() === "" ? "" : prompt);
         await loadPrompt();
       } catch (error) {
         errors.push(`${t("config.letterPrompt")}: ${String(error)}`);
@@ -270,7 +270,7 @@ export default function ConfigPage() {
 
       <section className="panel space-y-4" aria-labelledby="config-language">
         <div><h3 id="config-language" className="text-base font-semibold">{t("config.language")}</h3><p className="mt-1 text-xs text-[var(--muted-fg)]">{t("config.languageHint")}</p></div>
-        <select className="field-input max-w-sm" value={lang} onChange={(event) => void changeLanguage(event.target.value as Lang)} disabled={languageBusy}>{LANGS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
+        <select className="field-input max-w-sm" value={lang} onChange={(event) => void changeLanguage(event.target.value as Lang)} disabled={languageBusy} aria-label={t("config.language")}>{LANGS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
         {languageLoading && <p className="text-xs text-[var(--muted-fg)]">{t("common.loading")}</p>}
         {languageError && <p className="text-xs text-red-300" role="alert">{t(languageErrorKind === "save" ? "config.languageSaveFailed" : "config.loadFailed")}: {languageError}</p>}
       </section>

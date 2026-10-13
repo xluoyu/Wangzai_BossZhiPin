@@ -82,13 +82,11 @@
 }
 
 @media (max-width: 720px) {
-  .app-sidebar { width: 68px; flex-basis: 68px; padding: 18px 8px; }
+  .app-sidebar { width: 88px; flex-basis: 88px; padding: 18px 8px; }
   .brand-lockup { padding: 0 5px 30px; }
   .brand-name, .brand-caption, .sidebar-foot, .nav-index { display: none; }
   .brand-mark { font-size: 21px; }
-  .side-nav-item { justify-content: center; padding: 12px 4px; font-size: 0; }
-  .side-nav-item::after { content: ""; width: 6px; height: 6px; border: 1px solid currentColor; border-radius: 50%; }
-  .side-nav-item.is-active::after { background: currentColor; }
+  .side-nav-item { justify-content: center; padding: 12px 4px; font-size: 10px; line-height: 1.3; letter-spacing: .04em; text-align: center; }
   .topbar { align-items: flex-start; flex-direction: column; gap: 15px; padding: 18px 20px; }
   .topbar-actions { width: 100%; justify-content: space-between; flex-wrap: wrap; }
   .content-inner { padding: 24px 18px; }
