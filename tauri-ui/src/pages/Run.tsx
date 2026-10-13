@@ -21,6 +21,7 @@ export default function RunPage() {
   const [llmError, setLlmError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [resume, setResume] = useState<ResumeInfo | null>(null);
+  const [resumeRefreshing, setResumeRefreshing] = useState(() => useRunStore.getState().resumeUploading);
   const [resumeError, setResumeError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
@@ -48,6 +49,7 @@ export default function RunPage() {
   const eventScrollRef = useRef<HTMLDivElement>(null);
   const logScrollRef = useRef<HTMLPreElement>(null);
   const resumeRequestRef = useRef(0);
+  const previousResumeBusyRef = useRef(resumeBusy);
   const copyMsgTimerRef = useRef<number | null>(null);
   const logDirCopyTimerRef = useRef<number | null>(null);
 
@@ -66,12 +68,14 @@ export default function RunPage() {
   }), []);
 
   useEffect(() => {
+    let cancelled = false;
     const request = resumeRequestRef.current;
     Promise.all([
       ipc.getLlmConfig(),
       ipc.getEnvFields(),
       ipc.getResume(),
     ]).then(([cfg, env, currentResume]) => {
+      if (cancelled) return;
       setLlmCfg(cfg);
       const current = useRunStore.getState();
       const updates: { formUsrName?: string; formLabel?: string } = {};
@@ -84,9 +88,43 @@ export default function RunPage() {
         setResume(currentResume.resume);
       }
     }).catch((error) => {
-      setLlmError(String(error));
+      if (!cancelled) setLlmError(String(error));
     });
+    return () => { cancelled = true; };
   }, [setFormState]);
+
+  useEffect(() => {
+    const wasUploading = previousResumeBusyRef.current;
+    previousResumeBusyRef.current = resumeBusy;
+    if (resumeBusy) {
+      setResumeRefreshing(true);
+      return;
+    }
+    if (running) {
+      setResumeRefreshing(false);
+      return;
+    }
+    if (!wasUploading) return;
+
+    const request = ++resumeRequestRef.current;
+    let cancelled = false;
+    ipc.getResume()
+      .then(({ resume: currentResume }) => {
+        if (!cancelled && isCurrentResumeRequest(request) && !useRunStore.getState().resumeUploading) {
+          setResume(currentResume);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled && isCurrentResumeRequest(request) && !useRunStore.getState().resumeUploading) {
+          setResume(null);
+          setResumeError(String(error));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setResumeRefreshing(false);
+      });
+    return () => { cancelled = true; };
+  }, [resumeBusy, running]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -119,7 +157,7 @@ export default function RunPage() {
       cancelled = true;
       unlisten?.();
     };
-  }, [t]);
+  }, [t, resumeRefreshing]);
 
   useEffect(() => {
     if (eventScrollRef.current) eventScrollRef.current.scrollTop = eventScrollRef.current.scrollHeight;
@@ -150,7 +188,8 @@ export default function RunPage() {
   }
 
   function beginResumeUpload(): number | null {
-    if (useRunStore.getState().running || useRunStore.getState().resumeUploading) return null;
+    if (useRunStore.getState().running || useRunStore.getState().resumeUploading || resumeRefreshing) return null;
+    setResumeRefreshing(true);
     setResumeBusy(true);
     return ++resumeRequestRef.current;
   }
@@ -165,7 +204,7 @@ export default function RunPage() {
   }
 
   async function startRun() {
-    if (useRunStore.getState().running || busy || useRunStore.getState().resumeUploading) return;
+    if (useRunStore.getState().running || busy || useRunStore.getState().resumeUploading || resumeRefreshing) return;
     const error = validateStart();
     if (error) {
       setStartError(error);
@@ -193,7 +232,7 @@ export default function RunPage() {
   }
 
   function requestStart() {
-    if (useRunStore.getState().running || busy || useRunStore.getState().resumeUploading) return;
+    if (useRunStore.getState().running || busy || useRunStore.getState().resumeUploading || resumeRefreshing) return;
     const error = validateStart();
     if (error) {
       setStartError(error);
@@ -351,9 +390,9 @@ export default function RunPage() {
 
         <div>
           <div className="mb-2 flex items-baseline justify-between gap-3"><span className="field-label">{t("run.fieldResume")}</span><span className="mono-tag">{t("run.resumeHint")}</span></div>
-          <input ref={fileInputRef} type="file" accept="application/pdf,.pdf" aria-label={t("run.fieldResume")} className="hidden" onChange={onFilePicked} disabled={running || resumeBusy} />
+          <input ref={fileInputRef} type="file" accept="application/pdf,.pdf" aria-label={t("run.fieldResume")} className="hidden" onChange={onFilePicked} disabled={running || resumeBusy || resumeRefreshing} />
           <div className={`border border-dashed p-4 transition-colors ${dragging ? "border-[var(--accent)] bg-[var(--graphite-700)]" : "border-[var(--border-light)]"} ${running ? "opacity-50" : ""}`}>
-            {resumeBusy ? <p className="font-mono text-sm" role="status">{t("run.uploading")}</p> : resume ? <div className="flex flex-wrap items-center justify-between gap-3"><span className="font-mono text-sm">{t("run.currentResume", { filename: resume.filename })}</span><button type="button" className="btn-outline text-xs" disabled={running || resumeBusy} onClick={() => fileInputRef.current?.click()}>{t("run.replaceResume")}</button></div> : <div className="flex flex-wrap items-center justify-between gap-3"><span className="font-mono text-sm text-[var(--muted-fg)]">{t("run.dropPrompt")}</span><button type="button" className="btn-outline text-xs" disabled={running || resumeBusy} onClick={() => fileInputRef.current?.click()}>{t("btn.pickFile")}</button></div>}
+            {resumeBusy || resumeRefreshing ? <p className="font-mono text-sm" role="status">{t("run.uploading")}</p> : resume ? <div className="flex flex-wrap items-center justify-between gap-3"><span className="font-mono text-sm">{t("run.currentResume", { filename: resume.filename })}</span><button type="button" className="btn-outline text-xs" disabled={running || resumeBusy || resumeRefreshing} onClick={() => fileInputRef.current?.click()}>{t("run.replaceResume")}</button></div> : <div className="flex flex-wrap items-center justify-between gap-3"><span className="font-mono text-sm text-[var(--muted-fg)]">{t("run.dropPrompt")}</span><button type="button" className="btn-outline text-xs" disabled={running || resumeBusy || resumeRefreshing} onClick={() => fileInputRef.current?.click()}>{t("btn.pickFile")}</button></div>}
             {resumeError && <p className="mt-3 text-xs text-[var(--accent)]">{resumeError}</p>}
           </div>
         </div>
@@ -362,11 +401,11 @@ export default function RunPage() {
       <section className="panel space-y-4">
         <SectionHeading eyebrow="02" title={t("run.workbenchControl")} detail={t("run.controlDetail")} />
         <div className="flex flex-wrap items-center gap-3">
-          <button type="button" onClick={requestStart} disabled={running || busy || resumeBusy} className="btn">{t("btn.start")} <span aria-hidden="true">→</span></button>
+          <button type="button" onClick={requestStart} disabled={running || busy || resumeBusy || resumeRefreshing} className="btn">{t("btn.start")} <span aria-hidden="true">→</span></button>
           <button type="button" onClick={stopRun} disabled={!running || busy} className="btn-outline">{t("run.stopTask")}</button>
           <button type="button" onClick={resetBrowser} disabled={running || busy} className="btn-ghost">{t("btn.resetChrome")}</button>
         </div>
-        {confirmLiveRun && <div className="border border-[var(--accent)] bg-[var(--graphite-800)] p-4" role="alertdialog" aria-live="assertive"><p className="font-mono text-sm">{t("run.confirmLiveTitle")}</p><p className="mt-1 text-sm text-[var(--muted-fg)]">{t("run.confirmLiveDesc")}</p><p className="mt-1 break-words text-sm text-[var(--muted-fg)]">{t("run.confirmLiveLabel", { label: label.trim() || t("run.confirmLiveFeed") })}</p><div className="mt-4 flex flex-wrap gap-3"><button type="button" className="btn" onClick={() => void startRun()} disabled={running || busy || resumeBusy}>{t("run.confirmLive")}</button><button type="button" className="btn-outline" onClick={() => setConfirmLiveRun(false)} disabled={busy}>{t("run.confirmCancel")}</button></div></div>}
+        {confirmLiveRun && <div className="border border-[var(--accent)] bg-[var(--graphite-800)] p-4" role="alertdialog" aria-live="assertive"><p className="font-mono text-sm">{t("run.confirmLiveTitle")}</p><p className="mt-1 text-sm text-[var(--muted-fg)]">{t("run.confirmLiveDesc")}</p><p className="mt-1 break-words text-sm text-[var(--muted-fg)]">{t("run.confirmLiveLabel", { label: label.trim() || t("run.confirmLiveFeed") })}</p><div className="mt-4 flex flex-wrap gap-3"><button type="button" className="btn" onClick={() => void startRun()} disabled={running || busy || resumeBusy || resumeRefreshing}>{t("run.confirmLive")}</button><button type="button" className="btn-outline" onClick={() => setConfirmLiveRun(false)} disabled={busy}>{t("run.confirmCancel")}</button></div></div>}
         {startError && <div className="border border-[var(--accent)] p-3 font-mono text-sm text-[var(--accent)]" role="alert">{startError}</div>}
         {hasError && <div className="border border-[var(--border-light)] bg-[var(--graphite-800)] p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-mono text-sm text-[var(--accent)]">{t("run.errorTitle")}</p><p className="mt-1 text-xs text-[var(--muted-fg)]">{lastError ? eventPayloadText(lastError) : t("run.errorDesc")}</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={copyLogs} className="btn-outline text-xs">{t("btn.copyLogs")}</button><button type="button" onClick={copyAiHelp} className="btn text-xs">{t("askai.btn")}</button></div></div>{logDir && <p className="mt-3 break-all text-xs font-mono text-[var(--muted-fg)]">{t("run.logDir", { dir: logDir.dir })} <button type="button" className="ml-2 underline underline-offset-2" onClick={copyLogDir}>{t("btn.copyPath")}</button>{logDirCopyState ? ` · ${logDirCopyState}` : ""}</p>}{copyMsg && <p className="mt-3 text-xs font-mono text-[var(--accent)]" role="status">{copyMsg}</p>}</div>}
       </section>
