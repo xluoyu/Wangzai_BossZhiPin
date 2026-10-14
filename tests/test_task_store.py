@@ -154,3 +154,77 @@ class TestTaskStore:
             store.query_tasks(scope="invalid")
         with pytest.raises(ValueError, match="unknown group counters"):
             store.increment_group(group["group_id"], unknown=1)
+
+    def test_approve_moves_pending_task_to_sendable_state(self, tmp_path):
+        store = TaskStore(tmp_path / "logs")
+        task = _task(store, task_status="pending_review", review_status="pending", send_status="not_sent")
+
+        approved = store.approve_task(task["task_id"])
+
+        assert approved["task_status"] == "approved_pending_send"
+        assert approved["review_status"] == "approved"
+        assert approved["reviewed_at"]
+        assert store.query_tasks(scope="active", task_status="approved_pending_send") == [approved]
+
+    def test_reject_moves_pending_task_to_terminal_queue(self, tmp_path):
+        store = TaskStore(tmp_path / "logs")
+        task = _task(store, task_status="pending_review", review_status="pending", send_status="not_sent")
+
+        rejected = store.reject_task(task["task_id"], reason="不符合目标方向")
+
+        assert rejected["task_status"] == "rejected"
+        assert rejected["review_status"] == "rejected"
+        assert rejected["send_status"] == "skipped"
+        assert rejected["failure_reason"] == "不符合目标方向"
+        assert not store.query_tasks(scope="active")
+
+    def test_reconcile_group_counts_current_task_states(self, tmp_path):
+        store = TaskStore(tmp_path / "logs")
+        group = store.create_group(mode="dry_run")
+        pending = _task(
+            store,
+            group_id=group["group_id"],
+            task_status="pending_review",
+            review_status="pending",
+            greeting="您好，想和您交流。",
+            filter_result={"stage": "llm", "score": 82},
+        )
+        approved = _task(
+            store,
+            group_id=group["group_id"],
+            task_status="approved_pending_send",
+            review_status="approved",
+            greeting="您好，期待交流。",
+        )
+        sent = _task(store, group_id=group["group_id"], greeting="您好。", task_status="processing")
+        store.move_to_queue(sent["task_id"], task_status="sent", review_status="approved", send_status="sent")
+        filtered = _task(
+            store,
+            group_id=group["group_id"],
+            filter_result={"stage": "keyword"},
+        )
+        store.move_to_queue(filtered["task_id"], task_status="filtered", send_status="skipped")
+
+        reconciled = store.reconcile_group(group["group_id"], status="completed")
+
+        assert reconciled["total_tasks"] == 4
+        assert reconciled["processed_count"] == 4
+        assert reconciled["generated_count"] == 3
+        assert reconciled["pending_review_count"] == 1
+        assert reconciled["approved_pending_send_count"] == 1
+        assert reconciled["sent_count"] == 1
+        assert reconciled["filtered_count"] == 1
+        assert reconciled["keyword_filtered_count"] == 1
+        assert reconciled["llm_filtered_count"] == 0
+        assert reconciled["finished_at"]
+
+    def test_cancel_processing_tasks_preserves_review_queue(self, tmp_path):
+        store = TaskStore(tmp_path / "logs")
+        group = store.create_group(mode="dry_run")
+        processing = _task(store, group_id=group["group_id"], task_status="processing")
+        pending = _task(store, group_id=group["group_id"], task_status="pending_review", review_status="pending")
+
+        assert store.cancel_processing_tasks(group["group_id"]) == 1
+        cancelled = store.query_tasks(scope="queue", task_status="cancelled")
+        assert [item["task_id"] for item in cancelled] == [processing["task_id"]]
+        assert [item["task_id"] for item in store.query_tasks(scope="active")] == [pending["task_id"]]

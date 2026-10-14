@@ -383,6 +383,48 @@ class _LimitBody(_CamelModel):
     limit: int = 200
 
 
+def _task_store():
+    from boss_zhipin.audit.task_store import TaskStore
+
+    return TaskStore()
+
+
+@commands.command()
+async def get_review_tasks() -> dict[str, list[dict]]:
+    """返回待审核和已批准待发送的活动任务。"""
+    store = _task_store()
+    tasks = store.query_tasks(scope="active")
+    visible = [
+        task
+        for task in tasks
+        if task.get("task_status") in {"pending_review", "approved_pending_send"}
+    ]
+    return {"tasks": list(reversed(visible))}
+
+
+class _ReviewActionBody(_CamelModel):
+    task_ids: list[str]
+    action: str
+
+
+@commands.command()
+async def review_tasks(body: _ReviewActionBody) -> dict[str, list[dict]]:
+    """批准、拒绝或顺序发送审核队列中的任务。"""
+    if runner.is_running():
+        raise RuntimeError("运行任务进行中，暂不能处理审核队列")
+    from boss_zhipin.website_oper.review_sender import process_tasks
+
+    return await process_tasks(body.task_ids, body.action, store=_task_store())
+
+
+@commands.command()
+async def get_task_queue(body: _LimitBody) -> dict[str, list[dict]]:
+    """返回已结束的任务历史，独立于 letters.jsonl。"""
+    records = _task_store().query_tasks(scope="queue")
+    limit = max(body.limit, 0)
+    return {"tasks": list(reversed(records[-limit:])) if limit else []}
+
+
 @commands.command()
 async def get_letters(body: _LimitBody) -> dict[str, list[dict]]:
     """读 ``logs/letters.jsonl`` 末尾 ``limit`` 条。"""

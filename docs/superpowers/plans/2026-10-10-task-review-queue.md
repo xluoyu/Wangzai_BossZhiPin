@@ -76,6 +76,7 @@ total_tasks
 processed_count
 generated_count
 pending_review_count
+approved_pending_send_count
 sent_count
 filtered_count
 rejected_count
@@ -209,6 +210,8 @@ JSONL 文件不存在时自动创建父目录；写入采用 UTF-8，并保证�
 
 ### 阶段三：主流程接入
 
+**状态：已完成（2026-10-14）**
+
 修改 `src/boss_zhipin/website_oper/write_response.py` 和必要的运行入口：
 
 1. 每次运行创建 `group_id` 和任务组记录。
@@ -220,6 +223,8 @@ JSONL 文件不存在时自动创建父目录；写入采用 UTF-8，并保证�
 7. 保留现有 GUI 事件和 `log_attempt`/`letters.jsonl` 兼容行为；新的任务记录以 task store 为准。
 
 ### 阶段四：审核后发送
+
+**状态：已完成（2026-10-14）**
 
 新增 `src/boss_zhipin/website_oper/review_sender.py`：
 
@@ -233,6 +238,10 @@ JSONL 文件不存在时自动创建父目录；写入采用 UTF-8，并保证�
 后端可提供查询、审核、审核后发送所需的函数或 IPC 接口，但本次不修改 `tauri-ui/**`。
 
 ### 阶段五：文档与测试
+
+**状态：部分完成（2026-10-14）**
+
+已新增 `docs/wiki/task-review-queue.md`，补充任务存储层、批准/拒绝状态流转、取消收尾和任务组统计重算测试；真实浏览器端到端发送测试仍需在后续验证环境中补充。
 
 新增功能说明 `docs/wiki/task-review-queue.md`，说明：
 

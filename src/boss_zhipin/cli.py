@@ -20,6 +20,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sys
@@ -40,6 +41,7 @@ from boss_zhipin.providers import (
     LLM_PRESETS,
     is_llm_configured,
 )
+from boss_zhipin.audit.task_store import TaskStore
 from boss_zhipin.vectorization import embed_resume
 from boss_zhipin.website_oper.write_response import send_job_descriptions_to_chat
 
@@ -132,6 +134,48 @@ async def run_provider(
     dry_run: bool,
     resume_path: str,
 ) -> None:
+    """创建运行组并执行一次完整任务。"""
+    task_store = TaskStore()
+    exclude_str = os.getenv("BOSS_EXCLUDE_KEYWORDS", "")
+    exclude_keywords = [k.strip() for k in exclude_str.split(",") if k.strip()] if exclude_str else None
+    group = task_store.create_group(
+        mode="dry_run" if dry_run else "direct",
+        label=label,
+        exclude_keywords=exclude_keywords,
+    )
+    try:
+        completed = await _run_provider(
+            usr_name=usr_name,
+            label=label,
+            dry_run=dry_run,
+            resume_path=resume_path,
+            task_store=task_store,
+            group_id=group["group_id"],
+            exclude_keywords=exclude_keywords,
+        )
+    except asyncio.CancelledError:
+        task_store.cancel_processing_tasks(group["group_id"])
+        task_store.reconcile_group(group["group_id"], status="cancelled")
+        raise
+    except Exception:
+        task_store.reconcile_group(group["group_id"], status="failed")
+        raise
+    else:
+        task_store.reconcile_group(
+            group["group_id"],
+            status="completed" if completed else "failed",
+        )
+
+
+async def _run_provider(
+    usr_name: str,
+    label: str,
+    dry_run: bool,
+    resume_path: str,
+    task_store: TaskStore | None = None,
+    group_id: str | None = None,
+    exclude_keywords: list[str] | None = None,
+) -> bool:
     """简历预处理 + 主循环，CLI 和 GUI 共用的唯一入口。
 
     用哪个 LLM 端点 / model 由 ``LLM_*`` 环境变量决定（见 ``llm._build_client``），
@@ -155,10 +199,7 @@ async def run_provider(
     # 关键词粗筛门槛：JD 至少命中几个简历关键词才进 LLM 评分。可用 BOSS_MIN_KEYWORD_MATCH
     # 覆盖（默认 2）。觉得跳过太多（推荐 feed 跟简历词对不上）就调低到 1。
     min_keyword_match = _int_env("BOSS_MIN_KEYWORD_MATCH", 2, 0, 20)
-    exclude_str = os.getenv("BOSS_EXCLUDE_KEYWORDS", "")
-    exclude_keywords = [k.strip() for k in exclude_str.split(",") if k.strip()] if exclude_str else None
-
-    await send_job_descriptions_to_chat(
+    return await send_job_descriptions_to_chat(
         usr_name=usr_name,
         url=RECOMMEND_URL,
         browser_type="chrome",
@@ -170,6 +211,8 @@ async def run_provider(
         min_llm_score=min_llm_score,
         exclude_keywords=exclude_keywords,
         vectorstore=vectorstore,
+        task_store=task_store,
+        group_id=group_id,
     )
 
 

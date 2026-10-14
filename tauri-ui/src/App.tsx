@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import RunPage from "./pages/Run";
 import ConfigPage from "./pages/Config";
 import HistoryPage from "./pages/History";
+import ReviewPage from "./pages/Review";
 import UpdateBanner from "./components/UpdateBanner";
 import { useRunStore, useT } from "./store";
 import { ipc } from "./lib/ipc";
 import { isLang } from "./lib/i18n";
 
-type Tab = "run" | "config" | "history";
+type Tab = "run" | "review" | "history" | "config";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("run");
@@ -163,8 +164,11 @@ export default function App() {
           <TabButton current={tab} value="config" onClick={setTab}>
             <span className="nav-index">02</span>{t("tab.config")}
           </TabButton>
+          <TabButton current={tab} value="review" onClick={setTab}>
+            <span className="nav-index">03</span>{t("tab.review")}
+          </TabButton>
           <TabButton current={tab} value="history" onClick={setTab}>
-            <span className="nav-index">03</span>{t("tab.history")}
+            <span className="nav-index">04</span>{t("tab.history")}
           </TabButton>
         </nav>
         <div className="sidebar-foot">AUTO GREETING<br />JOB HELPER</div>
@@ -203,6 +207,7 @@ export default function App() {
               </div>
             )}
             <div hidden={tab !== "config"}><ConfigPage /></div>
+            {tab === "review" && <ReviewPage />}
             {tab === "history" && <HistoryPage />}
           </div>
         </main>

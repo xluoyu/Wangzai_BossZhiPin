@@ -34,6 +34,7 @@ CHROME_PROFILE_DIR = os.path.abspath(
 
 _browser: uc.Browser | None = None
 _tab: uc.Tab | None = None
+_last_job_details: JobDetails | None = None
 
 
 def _env_flag_true(name: str) -> bool:
@@ -608,8 +609,21 @@ def _strip_jd_noise(text: str) -> str:
 
 async def get_job_description_by_index(index: int) -> str | None:
     """兼容旧调用方：点开岗位卡并只返回 JD 文本。"""
+    global _last_job_details
     details = await get_job_details_by_index(index)
+    _last_job_details = details
     return details.jd if details.jd else None
+
+
+def get_last_job_details() -> JobDetails | None:
+    """返回最近一次兼容接口抓取到的结构化岗位信息。"""
+    return _last_job_details
+
+
+def clear_last_job_details() -> None:
+    """清空最近一次岗位信息，避免旧记录污染下一轮任务。"""
+    global _last_job_details
+    _last_job_details = None
 
 
 async def get_job_details_by_index(index: int) -> JobDetails:

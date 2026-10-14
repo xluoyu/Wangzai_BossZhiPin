@@ -25,14 +25,40 @@ import asyncio
 import logging
 import os
 import random
+from datetime import datetime
 
 from boss_zhipin.audit import log_attempt, validate_letter
+from boss_zhipin.audit.task_store import TaskStore
 from boss_zhipin.gui.events import emit as _emit_progress
 from boss_zhipin.models.job_matcher import should_apply
 from boss_zhipin.models.llm import current_provider_label, generate_letter
 from boss_zhipin.website_oper import finding_jobs
 
 log = logging.getLogger(__name__)
+
+
+def _now() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _task_filter_result(details: dict) -> dict:
+    return {
+        key: details[key]
+        for key in ("stage", "reason", "matched_keywords", "score", "threshold", "scoring_degraded")
+        if key in details
+    }
+
+
+def _task_analysis(details: dict) -> dict | None:
+    keys = ("score", "reason", "matched_keywords", "threshold")
+    result = {key: details[key] for key in keys if key in details}
+    return result or None
+
+
+def _increment_task_group(store: TaskStore | None, group_id: str | None, **counts: int) -> None:
+    if store is None or not group_id or not counts:
+        return
+    store.increment_group(group_id, **counts)
 
 
 class ReturnToListError(RuntimeError):
@@ -110,7 +136,9 @@ async def send_job_descriptions_to_chat(
     min_keyword_match: int = 2,
     min_llm_score: int = 70,
     exclude_keywords: list[str] | None = None,
-) -> None:
+    task_store: TaskStore | None = None,
+    group_id: str | None = None,
+) -> bool:
     """主循环（async）。
 
     用哪个 LLM 端点 / model 由 ``LLM_*`` 环境变量决定（见 ``llm._build_client``），
@@ -143,6 +171,7 @@ async def send_job_descriptions_to_chat(
     # 一旦 LLM 评分走了 fail-open（缺配置 / 调用挂 / 解析不出分），第二层过滤其实在
     # 全放行。只在本轮**首次**遇到时提示一次，别每个岗位刷屏。
     degraded_warned = False
+    run_failed = False
     # 推荐 feed 末尾、或者某条岗位卡 DOM 没渲染好，都会让 get_job_description
     # 返回 None。连续 N 次拿不到就当列表到底了停掉，否则 job_index 会无限涨。
     MAX_CONSECUTIVE_MISSES = 5
@@ -172,8 +201,9 @@ async def send_job_descriptions_to_chat(
             # 白等 10s JD 超时，5 轮后照样上报 feed_exhausted —— 那正是本次要修掉
             # 的误报：明明是页面没加载出来，却告诉用户「已经到底了」。
             _emit_progress("error", stage="job_list_never_rendered", message=message)
-            return
+            return False
     while True:
+        task_id: str | None = None
         try:
             iteration += 1
             log.info(
@@ -182,9 +212,24 @@ async def send_job_descriptions_to_chat(
                 job_index,
                 visible_index,
             )
+            finding_jobs.clear_last_job_details()
             job_description = await finding_jobs.get_job_description_by_index(
                 visible_index
             )
+            job_details = finding_jobs.get_last_job_details()
+            if job_details is not None and job_description and job_details.jd != job_description:
+                job_details = None
+            if task_store is not None and group_id:
+                task = task_store.create_task(
+                    group_id=group_id,
+                    company_name=job_details.company_name if job_details else "",
+                    job_title=job_details.job_title if job_details else f"岗位 #{job_index}",
+                    job_url=job_details.job_url if job_details else "",
+                    jd=job_description or "",
+                    failure_reason=job_details.error if job_details and not job_description else None,
+                )
+                task_id = task["task_id"]
+                _increment_task_group(task_store, group_id, total_tasks=1)
             if job_description:
                 consecutive_misses = 0
                 _emit_progress(
@@ -254,6 +299,30 @@ async def send_job_descriptions_to_chat(
                                 threshold=details.get("threshold"),
                                 matched=details.get("matched_keywords"),
                             )
+                            if task_id:
+                                task_store.move_to_queue(
+                                    task_id,
+                                    task_status="filtered",
+                                    review_status="not_required",
+                                    send_status="skipped",
+                                    filter_result=_task_filter_result(details),
+                                    llm_analysis=_task_analysis(details),
+                                    failure_reason=details.get("reason", "过滤跳过"),
+                                )
+                                counter_by_stage = {
+                                    "blacklist": "blacklist_count",
+                                    "keyword": "keyword_filtered_count",
+                                    "vector_search": "vector_filtered_count",
+                                    "llm": "llm_filtered_count",
+                                }
+                                stage_counter = counter_by_stage.get(stage)
+                                _increment_task_group(
+                                    task_store,
+                                    group_id,
+                                    processed_count=1,
+                                    filtered_count=1,
+                                    **({stage_counter: 1} if stage_counter else {}),
+                                )
                             job_index += 1
                             visible_index += 1
                             await asyncio.sleep(3)
@@ -308,6 +377,17 @@ async def send_job_descriptions_to_chat(
                             score=match_score,
                             letter_len=len(response),
                         )
+                        if task_id:
+                            task_store.move_to_queue(
+                                task_id,
+                                task_status="failed",
+                                review_status="not_required",
+                                send_status="skipped",
+                                greeting=response,
+                                llm_analysis=_task_analysis(details) if resume_text else None,
+                                failure_reason="; ".join(validation.reasons),
+                            )
+                            _increment_task_group(task_store, group_id, processed_count=1, failed_count=1)
                     elif dry_run:
                         log.info(
                             "[DRY-RUN] 招呼语 (%d 字符) 不发送。--- letter ---\n%s\n--------------",
@@ -330,6 +410,24 @@ async def send_job_descriptions_to_chat(
                             score=match_score,
                             letter_len=len(response),
                         )
+                        if task_id:
+                            task_store.update_task(
+                                task_id,
+                                task_status="pending_review",
+                                review_status="pending",
+                                send_status="not_sent",
+                                greeting=response,
+                                filter_result=_task_filter_result(details) if resume_text else {},
+                                llm_analysis=_task_analysis(details) if resume_text else None,
+                                finished_at=_now(),
+                            )
+                            _increment_task_group(
+                                task_store,
+                                group_id,
+                                processed_count=1,
+                                generated_count=1,
+                                pending_review_count=1,
+                            )
                     else:
                         log.info("发送招呼语：%s", response)
                         await asyncio.sleep(1)
@@ -367,6 +465,24 @@ async def send_job_descriptions_to_chat(
                             score=match_score,
                             letter_len=len(response),
                         )
+                        if task_id:
+                            task_store.move_to_queue(
+                                task_id,
+                                task_status="sent",
+                                review_status="approved",
+                                send_status="sent",
+                                greeting=response,
+                                filter_result=_task_filter_result(details) if resume_text else {},
+                                llm_analysis=_task_analysis(details) if resume_text else None,
+                                sent_at=_now(),
+                            )
+                            _increment_task_group(
+                                task_store,
+                                group_id,
+                                processed_count=1,
+                                generated_count=1,
+                                sent_count=1,
+                            )
                         if not returned_to_list:
                             # 已经卡在沟通页、回不到列表，继续循环只会一直拿不到 JD；
                             # 招呼语已记录，干净收尾而不是让异常冒泡把这条发送吞掉。
@@ -382,7 +498,28 @@ async def send_job_descriptions_to_chat(
                         delay = random.uniform(send_delay_min, send_delay_max)
                         log.info("发送后等待 %.1f 秒再继续", delay)
                         await asyncio.sleep(delay)
+                else:
+                    log.info("岗位 #%d 当前不可沟通，跳过", job_index)
+                    if task_id:
+                        task_store.move_to_queue(
+                            task_id,
+                            task_status="filtered",
+                            review_status="not_required",
+                            send_status="skipped",
+                            filter_result={"stage": "contact_unavailable"},
+                            failure_reason="contact_unavailable",
+                        )
+                        _increment_task_group(task_store, group_id, processed_count=1, filtered_count=1)
             else:
+                if task_id:
+                    task_store.move_to_queue(
+                        task_id,
+                        task_status="failed",
+                        review_status="not_required",
+                        send_status="skipped",
+                        failure_reason=(job_details.error if job_details else "job_description_unavailable"),
+                    )
+                    _increment_task_group(task_store, group_id, processed_count=1, failed_count=1, fetch_failed_count=1)
                 consecutive_misses += 1
                 log.info(
                     "job_index=%d 拿不到 JD（连续第 %d 次）",
@@ -430,9 +567,24 @@ async def send_job_descriptions_to_chat(
 
         except Exception as e:
             log.exception("主循环抛异常: %s", e)
+            run_failed = True
+            if task_id and task_store is not None:
+                try:
+                    task_store.move_to_queue(
+                        task_id,
+                        task_status="failed",
+                        review_status="approved" if not dry_run else "not_required",
+                        send_status="failed" if not dry_run else "skipped",
+                        failure_reason=f"processing:{type(e).__name__}: {e}",
+                    )
+                    _increment_task_group(task_store, group_id, processed_count=1, failed_count=1)
+                except (KeyError, ValueError):
+                    pass
             _emit_progress(
                 "error",
                 stage=f"job_index={job_index}",
                 message=f"{type(e).__name__}: {e}",
             )
             break
+
+    return not run_failed

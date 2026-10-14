@@ -81,6 +81,27 @@ export type TelemetrySummary = {
   }>;
 };
 
+export type TaskRecord = {
+  schema_version: number;
+  task_id: string;
+  group_id: string;
+  company_name: string;
+  job_title: string;
+  job_url: string;
+  jd: string;
+  task_status: string;
+  review_status: string;
+  send_status: string;
+  filter_result: Record<string, unknown>;
+  llm_analysis: Record<string, unknown> | null;
+  greeting: string;
+  failure_reason: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  reviewed_at: string | null;
+  sent_at: string | null;
+};
+
 // ---------- wrappers ----------
 
 export const ipc = {
@@ -116,6 +137,15 @@ export const ipc = {
     pyInvoke<{ letters: LetterRecord[] }>("get_letters", { limit }),
   getTelemetrySummary: () =>
     pyInvoke<{ summary: TelemetrySummary }>("get_telemetry_summary", {}),
+  getReviewTasks: () =>
+    pyInvoke<{ tasks: TaskRecord[] }>("get_review_tasks", {}),
+  reviewTasks: (taskIds: string[], action: "approve" | "reject" | "send") =>
+    pyInvoke<{ results: TaskRecord[]; errors: { task_id: string; message: string }[] }>("review_tasks", {
+      taskIds,
+      action,
+    }),
+  getTaskQueue: (limit: number = 200) =>
+    pyInvoke<{ tasks: TaskRecord[] }>("get_task_queue", { limit }),
   // 检查更新：查 GitHub 最新 release。后端永不抛错，没网时 hasUpdate=false。
   checkForUpdate: () =>
     pyInvoke<UpdateInfo>("check_for_update", {}),

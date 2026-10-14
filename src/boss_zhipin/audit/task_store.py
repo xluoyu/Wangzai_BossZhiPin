@@ -24,6 +24,7 @@ _COUNTERS = (
     "processed_count",
     "generated_count",
     "pending_review_count",
+    "approved_pending_send_count",
     "sent_count",
     "filtered_count",
     "rejected_count",
@@ -268,6 +269,102 @@ class TaskStore:
         updates.update({"status": status, "finished_at": finished_at or _now()})
         return self.update_group(group_id, **updates)
 
+    def reconcile_group(
+        self,
+        group_id: str,
+        *,
+        status: str | None = None,
+        finished_at: str | None = None,
+    ) -> dict[str, Any]:
+        """Recalculate aggregate counters from active and terminal task records."""
+        with self._lock:
+            groups = self._read(self.groups_path)
+            group = self._find(groups, group_id, "group_id")
+            if group is None:
+                raise KeyError(f"unknown group_id: {group_id}")
+            records = [
+                record
+                for path in (self.tasks_path, self.queue_path)
+                for record in self._read(path)
+                if record.get("group_id") == group_id
+            ]
+            counts = {counter: 0 for counter in _COUNTERS}
+            counts["total_tasks"] = len(records)
+            counts["processed_count"] = sum(record.get("task_status") != "processing" for record in records)
+            counts["generated_count"] = sum(bool(record.get("greeting")) for record in records)
+            for record in records:
+                task_status = record.get("task_status")
+                if task_status == "pending_review":
+                    counts["pending_review_count"] += 1
+                elif task_status == "approved_pending_send":
+                    counts["approved_pending_send_count"] += 1
+                elif task_status == "sent":
+                    counts["sent_count"] += 1
+                elif task_status == "filtered":
+                    counts["filtered_count"] += 1
+                elif task_status == "rejected":
+                    counts["rejected_count"] += 1
+                elif task_status == "failed":
+                    counts["failed_count"] += 1
+                elif task_status == "send_failed":
+                    counts["send_failed_count"] += 1
+                elif task_status == "cancelled":
+                    counts["cancelled_count"] += 1
+
+                stage = (record.get("filter_result") or {}).get("stage")
+                stage_counter = {
+                    "blacklist": "blacklist_count",
+                    "keyword": "keyword_filtered_count",
+                    "vector_search": "vector_filtered_count",
+                    "llm": "llm_filtered_count",
+                }.get(stage)
+                if task_status == "filtered" and stage_counter:
+                    counts[stage_counter] += 1
+                failure_reason = str(record.get("failure_reason") or "")
+                if task_status == "failed" and ("job_description" in failure_reason or "fetch" in failure_reason):
+                    counts["fetch_failed_count"] += 1
+
+            updates: dict[str, Any] = counts
+            if status is not None:
+                updates["status"] = status
+                updates["finished_at"] = finished_at or _now()
+            elif finished_at is not None:
+                updates["finished_at"] = finished_at
+            for index, record in enumerate(groups):
+                if record.get("group_id") == group_id:
+                    record.update(updates)
+                    groups[index] = record
+                    self._replace(self.groups_path, groups)
+                    return dict(record)
+            raise KeyError(f"unknown group_id: {group_id}")
+
+    def cancel_processing_tasks(self, group_id: str, *, reason: str = "run_cancelled") -> int:
+        """Move only in-progress tasks for a group to the cancelled terminal queue."""
+        with self._lock:
+            active = self._read(self.tasks_path)
+            remaining: list[dict[str, Any]] = []
+            cancelled: list[dict[str, Any]] = []
+            for record in active:
+                if record.get("group_id") == group_id and record.get("task_status") == "processing":
+                    record = dict(record)
+                    record.update(
+                        {
+                            "task_status": "cancelled",
+                            "review_status": record.get("review_status") or "not_required",
+                            "send_status": "skipped",
+                            "failure_reason": reason,
+                            "finished_at": _now(),
+                        }
+                    )
+                    cancelled.append(record)
+                else:
+                    remaining.append(record)
+            if cancelled:
+                self._replace(self.tasks_path, remaining)
+                for record in cancelled:
+                    self._append(self.queue_path, record)
+            return len(cancelled)
+
     # ---------- active and terminal tasks ----------
 
     def create_task(self, *, task_id: str | None = None, **fields: Any) -> dict[str, Any]:
@@ -344,6 +441,37 @@ class TaskStore:
             self._replace(self.tasks_path, remaining)
             self._append(self.queue_path, task)
             return task
+
+    def approve_task(self, task_id: str) -> dict[str, Any]:
+        """Approve a pending task without sending it."""
+        task = self.get_task(task_id)
+        if task is None:
+            raise KeyError(f"unknown task_id: {task_id}")
+        if task.get("task_status") != "pending_review" or task.get("review_status") != "pending":
+            raise ValueError(f"task is not pending review: {task_id}")
+        return self.update_task(
+            task_id,
+            task_status="approved_pending_send",
+            review_status="approved",
+            send_status="not_sent",
+            reviewed_at=_now(),
+        )
+
+    def reject_task(self, task_id: str, *, reason: str = "人工拒绝") -> dict[str, Any]:
+        """Reject a pending task and move it to the terminal queue."""
+        task = self.get_task(task_id)
+        if task is None:
+            raise KeyError(f"unknown task_id: {task_id}")
+        if task.get("task_status") != "pending_review" or task.get("review_status") != "pending":
+            raise ValueError(f"task is not pending review: {task_id}")
+        return self.move_to_queue(
+            task_id,
+            task_status="rejected",
+            review_status="rejected",
+            send_status="skipped",
+            reviewed_at=_now(),
+            failure_reason=reason,
+        )
 
     # ---------- queries ----------
 
