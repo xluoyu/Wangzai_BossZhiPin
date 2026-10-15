@@ -1,8 +1,7 @@
 """把 root logger 的输出路由到注册的 callback（PyTauri Channel / 测试断言）。
 
 logger 是被业务代码的同步上下文用，所以 handler 的 ``emit`` 必须同步。
-caller 在 callback 里做异步推送（如 ``channel.send(msg)``）即可——PyTauri
-Channel 的 send 本身是 sync 的，所以没问题。
+caller 在 callback 里做同步推送即可——PyTauri Channel 的 send 本身是 sync 的。
 
 **仅 GUI 进程安装这个 handler**。CLI 模式（``main.py``）不调本模块，
 logger 行为完全不变。
@@ -43,6 +42,10 @@ def install(callback: Callable[[str], None], level: int = logging.INFO) -> Callb
     global _installed_handler
     if _installed_handler is not None:
         uninstall(_installed_handler)
+    # logging 会先在 root logger 的级别过滤记录，再分发给 handler。GUI 可能运行在
+    # 已经配置成 WARNING 的宿主进程里；显式放开到 bridge 所需级别，才能完整收到 CLI
+    # 正常输出的 INFO/WARNING/ERROR。
+    logging.getLogger().setLevel(level)
     handler = CallbackHandler(callback)
     handler.setLevel(level)
     handler.setFormatter(

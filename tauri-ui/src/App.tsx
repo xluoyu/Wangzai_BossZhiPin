@@ -12,7 +12,6 @@ type Tab = "run" | "review" | "history" | "config";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("run");
-  const [helpMsg, setHelpMsg] = useState<string | null>(null);
   const [runStateLoad, setRunStateLoad] = useState<"loading" | "ready" | "error">("loading");
   const [runStateRetry, setRunStateRetry] = useState(0);
   const hydratedBackendRunning = useRef(false);
@@ -22,20 +21,6 @@ export default function App() {
   const setRunning = useRunStore((s) => s.setRunning);
   const setLang = useRunStore((s) => s.setLang);
   const t = useT();
-
-  // 「问 AI 帮忙」：把 app 上下文 + 当前实时日志缓冲打成一段求助文本复制到剪贴板，
-  // 用户粘到任意聊天 AI 即可。常驻 header，每个 tab 都点得到（不只出错时）。
-  async function askAi() {
-    try {
-      const logs = useRunStore.getState().logs;
-      const { text } = await ipc.getAiHelpReport(logs);
-      await navigator.clipboard.writeText(text);
-      setHelpMsg(t("askai.ok"));
-    } catch {
-      setHelpMsg(t("askai.fail"));
-    }
-    setTimeout(() => setHelpMsg(null), 6000);
-  }
 
   // 启动时读回 .env 里存的 UI 语言，覆盖系统探测的默认。
   // 没设过（首次启动）则把探测到的默认落进 .env，让后端报错（读 BOSS_LANG）跟
@@ -186,10 +171,6 @@ export default function App() {
               <span className="status-dot" aria-hidden="true" />
               <span>{statusText}</span>
             </div>
-            <button onClick={askAi} className="ask-ai-btn">
-              <span aria-hidden="true">↗</span> {t("header.askAi")}
-            </button>
-            {helpMsg ? <span className="help-message" role="status">{helpMsg}</span> : null}
           </div>
         </header>
 

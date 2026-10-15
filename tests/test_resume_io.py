@@ -8,6 +8,7 @@
 import os
 
 import pytest
+from dotenv import load_dotenv
 from pypdf import PdfWriter
 
 from boss_zhipin.gui import resume_io
@@ -136,6 +137,18 @@ class TestCurrentResume:
         info = resume_io.current_resume()
         assert info is not None
         assert info["filename"] == "r.pdf"
+
+    def test_reads_back_path_loaded_from_dotenv(self, in_tmp_cwd, monkeypatch):
+        src = _make_pdf(in_tmp_cwd / "resume" / "saved.pdf")
+        (in_tmp_cwd / ".env").write_text(f"RESUME_PATH={src}\n")
+        monkeypatch.delenv("RESUME_PATH", raising=False)
+
+        load_dotenv(dotenv_path=in_tmp_cwd / ".env", override=False)
+
+        assert resume_io.current_resume() == {
+            "filename": "saved.pdf",
+            "path": str((in_tmp_cwd / "resume" / "saved.pdf").resolve()),
+        }
 
     def test_falls_back_to_default_path(self, in_tmp_cwd):
         # 默认 resume/my_cover.pdf 存在时无需设 env 也能认出来

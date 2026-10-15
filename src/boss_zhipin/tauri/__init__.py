@@ -35,10 +35,12 @@ environ.setdefault("_PYTAURI_DIST", "pytauri-wheel")
 
 import asyncio
 import functools
+import json
 import logging
 from typing import Optional
 
 from anyio.from_thread import start_blocking_portal
+from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 from pytauri import Commands
@@ -183,8 +185,13 @@ async def start_run(body: StartRunBody, webview_window: WebviewWindow) -> dict[s
         except Exception:
             pass
 
-    # logging → Channel
-    log_handler = log_bridge.install(lambda msg: _safe_send(log_channel, msg))
+    # logging → Channel。GUI 始终接收完整日志，不使用 CLI 的 LOGLEVEL 过滤。
+    # NOTSET 同时放开 root logger 和 bridge handler，确保 INFO/DEBUG 记录不会
+    # 在到达 Channel 之前被宿主进程或 .env 的 LOGLEVEL 丢掉。
+    log_handler = log_bridge.install(
+        lambda msg: _safe_send(log_channel, msg),
+        level=logging.NOTSET,
+    )
 
     factory = _build_main_loop_factory(body.config)
 
@@ -201,7 +208,10 @@ async def start_run(body: StartRunBody, webview_window: WebviewWindow) -> dict[s
 
 def _safe_send(channel, msg: str) -> None:
     try:
-        channel.send(msg)
+        # PyTauri Channel.send 接收的是 JSON 编码后的 payload。结构化事件走
+        # send_model() 会自动编码；日志是纯文本，必须显式编码成 JSON string，
+        # 否则包含时间戳/级别的文本不是合法 JSON，会在 IPC 边界被丢弃。
+        channel.send(json.dumps(msg, ensure_ascii=False))
     except Exception:
         pass
 
@@ -524,6 +534,10 @@ def main() -> int:
         # （models.* 的 load_dotenv 是 import-time）之前做。
         from boss_zhipin.paths import ensure_app_data_cwd
         data_dir = ensure_app_data_cwd()
+
+    # 上传简历时写入当前数据目录的 .env。必须在首个 get_resume IPC 之前读入，
+    # 否则 GUI 重启后 os.environ 没有 RESUME_PATH，会错误地显示为未上传。
+    load_dotenv(dotenv_path=Path(".env"), override=False)
 
     logging.basicConfig(
         level=environ.get("LOGLEVEL", "INFO"),

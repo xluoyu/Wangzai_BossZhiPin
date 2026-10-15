@@ -7,12 +7,19 @@ import { type Lang, detectLang, translate } from "./lib/i18n";
 
 const MAX_EVENTS = 500;
 const MAX_LOGS = 1000;
+const MAX_ACTIVITY = 1500;
+
+export type ActivityItem =
+  | { sequence: number; type: "event"; event: ProgressEvent }
+  | { sequence: number; type: "log"; line: string };
 
 type RunState = {
   running: boolean;
   resumeUploading: boolean;
   events: ProgressEvent[];
   logs: string[];
+  activity: ActivityItem[];
+  nextActivitySequence: number;
   currentIndex: number | null;  // 当前 job_index（从 job_found 提取）
 
   // UI 语言：启动时按系统 locale 探测，App 挂载后用 .env 的 BOSS_LANG 覆盖。
@@ -38,6 +45,8 @@ export const useRunStore = create<RunState>((set) => ({
   resumeUploading: false,
   events: [],
   logs: [],
+  activity: [],
+  nextActivitySequence: 1,
   currentIndex: null,
 
   lang: detectLang(),
@@ -59,10 +68,35 @@ export const useRunStore = create<RunState>((set) => ({
       if (ev.kind === "loop_ended" || ev.kind === "error") {
         running = false;
       }
-      return { events, currentIndex, running };
+      const activity = [...s.activity, {
+        sequence: s.nextActivitySequence,
+        type: "event" as const,
+        event: ev,
+      }].slice(-MAX_ACTIVITY);
+      return {
+        events,
+        activity,
+        nextActivitySequence: s.nextActivitySequence + 1,
+        currentIndex,
+        running,
+      };
     }),
-  pushLog: (line) => set((s) => ({ logs: [...s.logs, line].slice(-MAX_LOGS) })),
-  clear: () => set({ events: [], logs: [], currentIndex: null }),
+  pushLog: (line) => set((s) => ({
+    logs: [...s.logs, line].slice(-MAX_LOGS),
+    activity: [...s.activity, {
+      sequence: s.nextActivitySequence,
+      type: "log" as const,
+      line,
+    }].slice(-MAX_ACTIVITY),
+    nextActivitySequence: s.nextActivitySequence + 1,
+  })),
+  clear: () => set({
+    events: [],
+    logs: [],
+    activity: [],
+    nextActivitySequence: 1,
+    currentIndex: null,
+  }),
   setLang: (lang) => set({ lang }),
   setFormState: (state) => set((s) => ({ ...s, ...state })),
 }));

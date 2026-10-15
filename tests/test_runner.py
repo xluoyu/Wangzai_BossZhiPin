@@ -184,6 +184,39 @@ def test_log_bridge_captures_logger_output():
         log_bridge.uninstall(handler)
 
 
+def test_log_bridge_allows_info_when_root_was_warning():
+    """GUI bridge 必须放开 root filter，才能收到 CLI 的 INFO 日志。"""
+    root = logging.getLogger()
+    original_level = root.level
+    messages: list[str] = []
+    root.setLevel(logging.WARNING)
+    handler = log_bridge.install(messages.append, level=logging.INFO)
+    try:
+        logging.getLogger("test_runner.info").info("visible info")
+        assert any("visible info" in message for message in messages)
+    finally:
+        log_bridge.uninstall(handler)
+        root.setLevel(original_level)
+
+
+def test_log_bridge_can_capture_all_levels_without_filtering():
+    """GUI 全量日志模式不能因原有 WARNING 配置丢掉 DEBUG/INFO。"""
+    root = logging.getLogger()
+    original_level = root.level
+    messages: list[str] = []
+    root.setLevel(logging.WARNING)
+    handler = log_bridge.install(messages.append, level=logging.NOTSET)
+    try:
+        log = logging.getLogger("test_runner.all_levels")
+        log.debug("visible debug")
+        log.info("visible info")
+        assert any("visible debug" in message for message in messages)
+        assert any("visible info" in message for message in messages)
+    finally:
+        log_bridge.uninstall(handler)
+        root.setLevel(original_level)
+
+
 def test_log_bridge_install_replaces_previous():
     """重复 install 应卸掉旧 handler，否则同条日志被推 2 次。"""
     msgs1: list[str] = []

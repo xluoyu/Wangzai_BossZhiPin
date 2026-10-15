@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "r
 import { Channel } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { ipc, type LlmConfig, type ProgressEvent, type ResumeInfo, type RunConfig } from "../lib/ipc";
-import { useRunStore, useT } from "../store";
+import { type ActivityItem, useRunStore, useT } from "../store";
 
 type MetricCounts = {
   found: number;
@@ -38,6 +38,7 @@ export default function RunPage() {
   const resumeBusy = useRunStore((s) => s.resumeUploading);
   const events = useRunStore((s) => s.events);
   const logs = useRunStore((s) => s.logs);
+  const activity = useRunStore((s) => s.activity);
   const currentIndex = useRunStore((s) => s.currentIndex);
   const setRunning = useRunStore((s) => s.setRunning);
   const setResumeBusy = useRunStore((s) => s.setResumeUploading);
@@ -46,8 +47,7 @@ export default function RunPage() {
   const clear = useRunStore((s) => s.clear);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const eventScrollRef = useRef<HTMLDivElement>(null);
-  const logScrollRef = useRef<HTMLPreElement>(null);
+  const activityScrollRef = useRef<HTMLDivElement>(null);
   const resumeRequestRef = useRef(0);
   const previousResumeBusyRef = useRef(resumeBusy);
   const copyMsgTimerRef = useRef<number | null>(null);
@@ -70,11 +70,7 @@ export default function RunPage() {
   useEffect(() => {
     let cancelled = false;
     const request = resumeRequestRef.current;
-    Promise.all([
-      ipc.getLlmConfig(),
-      ipc.getEnvFields(),
-      ipc.getResume(),
-    ]).then(([cfg, env, currentResume]) => {
+    Promise.all([ipc.getLlmConfig(), ipc.getEnvFields()]).then(([cfg, env]) => {
       if (cancelled) return;
       setLlmCfg(cfg);
       const current = useRunStore.getState();
@@ -84,12 +80,20 @@ export default function RunPage() {
       if (name && !current.formUsrName) updates.formUsrName = name;
       if (savedLabel && !current.formLabel) updates.formLabel = savedLabel;
       if (Object.keys(updates).length) setFormState(updates);
-      if (request === resumeRequestRef.current) {
-        setResume(currentResume.resume);
-      }
     }).catch((error) => {
       if (!cancelled) setLlmError(String(error));
     });
+
+    ipc.getResume().then(({ resume: currentResume }) => {
+      if (!cancelled && request === resumeRequestRef.current) {
+        setResume(currentResume);
+      }
+    }).catch((error) => {
+      if (!cancelled && request === resumeRequestRef.current) {
+        setResumeError(String(error));
+      }
+    });
+
     return () => { cancelled = true; };
   }, [setFormState]);
 
@@ -160,12 +164,10 @@ export default function RunPage() {
   }, [t, resumeRefreshing]);
 
   useEffect(() => {
-    if (eventScrollRef.current) eventScrollRef.current.scrollTop = eventScrollRef.current.scrollHeight;
-  }, [events.length]);
-
-  useEffect(() => {
-    if (logScrollRef.current) logScrollRef.current.scrollTop = logScrollRef.current.scrollHeight;
-  }, [logs.length]);
+    if (activityScrollRef.current) {
+      activityScrollRef.current.scrollTop = activityScrollRef.current.scrollHeight;
+    }
+  }, [activity.length]);
 
   const metrics = deriveMetrics(events);
   const lastEnded = [...events].reverse().find((event) => event.kind === "loop_ended");
@@ -417,7 +419,7 @@ export default function RunPage() {
 
       <section className="panel">
         <SectionHeading eyebrow="04" title={t("run.workbenchActivity")} detail={t("run.activityDetail")} />
-        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.15fr_.85fr]"><div ref={eventScrollRef} className="h-96 overflow-y-auto border border-[var(--border-light)] bg-[var(--graphite-800)] p-4 text-xs font-mono">{events.length === 0 ? <p className="text-[var(--muted-fg)]">{t("run.noEvents")}</p> : events.map((event, index) => <EventRow key={`${event.kind}-${index}`} event={event} t={t} />)}</div><pre ref={logScrollRef} className="h-96 overflow-y-auto whitespace-pre-wrap break-words border border-[var(--border-light)] bg-[var(--graphite-950)] p-4 text-xs font-mono leading-relaxed">{logs.length === 0 ? <span className="text-[var(--muted-fg)]">{t("run.noLogs")}</span> : logs.join("\n")}</pre></div>
+        <div ref={activityScrollRef} className="mt-4 h-96 overflow-y-auto border border-[var(--border-light)] bg-[var(--graphite-950)] p-4 text-xs font-mono leading-relaxed">{activity.length === 0 ? <p className="text-[var(--muted-fg)]">{t("run.noActivity")}</p> : activity.map((item) => <ActivityRow key={item.sequence} item={item} t={t} />)}</div>
       </section>
     </div>
   );
@@ -450,11 +452,18 @@ function deriveMetrics(events: ProgressEvent[]): MetricCounts {
   }, { found: 0, skipped: 0, sent: 0, dryRun: 0, blocked: 0, errors: 0 });
 }
 
+function ActivityRow({ item, t }: { item: ActivityItem; t: (key: string, vars?: Record<string, string | number>) => string }) {
+  if (item.type === "event") {
+    return <div className="border-b border-[var(--border-light)] py-2 last:border-0"><span className="mono-tag">EVENT</span><EventRow event={item.event} t={t} /></div>;
+  }
+  return <p className="border-b border-[var(--border-light)] py-2 last:border-0 whitespace-pre-wrap break-words">{item.line}</p>;
+}
+
 function EventRow({ event, t }: { event: ProgressEvent; t: (key: string, vars?: Record<string, string | number>) => string }) {
   const isError = event.kind === "error" || (event.kind === "loop_ended" && event.payload.reason === "error");
   const isTerminal = event.kind === "loop_ended";
   const reason = event.kind === "loop_ended" ? endedReasonText(t, event.payload.reason) : null;
-  return <div className={`border-b border-[var(--border-light)] py-2 last:border-0 ${isError ? "text-[var(--accent)]" : ""}`}><div className="flex flex-wrap items-baseline gap-x-2 gap-y-1"><span className="text-[var(--muted-fg)]">{event.kind}</span>{isTerminal && reason && <span className="badge-outline">{reason}</span>}</div><p className="mt-1 break-words text-[var(--ink)]">{eventPayloadText(event) || t("run.emptyPayload")}</p></div>;
+  return <div className={`pt-2 ${isError ? "text-[var(--accent)]" : ""}`}><div className="flex flex-wrap items-baseline gap-x-2 gap-y-1"><span className="text-[var(--muted-fg)]">{event.kind}</span>{isTerminal && reason && <span className="badge-outline">{reason}</span>}</div><p className="mt-1 break-words text-[var(--ink)]">{eventPayloadText(event) || t("run.emptyPayload")}</p></div>;
 }
 
 function eventPayloadText(event: ProgressEvent): string {
