@@ -3,7 +3,7 @@
 ## 范围
 
 - 从 Tauri UI 顶部栏移除右上角「复制Log问AI」按钮。
-- 删除该按钮在 App 组件中的点击处理、提示状态，以及不再使用的顶部按钮样式和相关文案。
+- 删除该按钮在 App 组件中的点击处理、提示状态，以及不再使用的顶部按钮样式和 `header.askAi` 文案；保留运行错误面板中的「复制信息去问 AI」能力。
 - 让应用外壳和左侧菜单占满窗口高度；右侧内容区域独立滚动，左侧菜单不随内容滚动。
 
 ## 设计
@@ -20,6 +20,6 @@
 
 ## 验证
 
-- 检查 `App.tsx` 中不再引用 `askAi`、`helpMsg` 或 `header.askAi`。
+- 检查 `App.tsx` 中不再引用顶部 `askAi`、`helpMsg` 或 `header.askAi`；确认 `Run.tsx` 仍可使用错误面板的 `askai.*` 文案。
 - 检查样式中不再保留 `.ask-ai-btn` 和 `.help-message`。
 - 静态确认 `.app-shell`、`.app-sidebar`、`.app-main` 和 `.content-scroll` 的高度/溢出关系形成独立滚动区域。
